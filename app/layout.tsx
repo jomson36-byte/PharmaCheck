@@ -3,6 +3,8 @@ import { Sarabun } from "next/font/google";
 import { PwaRegistration } from "@/components/PwaRegistration";
 import "./globals.css";
 
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 const sarabun = Sarabun({
   weight: ["400", "500", "600", "700", "800"],
   subsets: ["latin", "thai"],
@@ -21,14 +23,14 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/favicon.ico", sizes: "32x32" },
-      { url: "/icons/favicon-16.png", sizes: "16x16", type: "image/png" },
-      { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: `${basePath}/favicon.ico`, sizes: "32x32" },
+      { url: `${basePath}/icons/favicon-16.png`, sizes: "16x16", type: "image/png" },
+      { url: `${basePath}/icons/favicon-32.png`, sizes: "32x32", type: "image/png" },
     ],
-    shortcut: "/favicon.ico",
-    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    shortcut: `${basePath}/favicon.ico`,
+    apple: [{ url: `${basePath}/icons/apple-touch-icon.png`, sizes: "180x180", type: "image/png" }],
   },
-  manifest: "/manifest.webmanifest",
+  manifest: `${basePath}/manifest.webmanifest`,
 };
 
 export const viewport: Viewport = {

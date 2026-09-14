@@ -43,6 +43,7 @@ const tabLabels: Record<string, string> = {
 };
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 async function getConfiguredGoogleClientId() {
   if (GOOGLE_CLIENT_ID) return GOOGLE_CLIENT_ID;
@@ -89,7 +90,7 @@ export function GppApp() {
 function AppHeader({ online }: { online: boolean }) {
   return (
     <header className={styles.appHeader}>
-      <img className={styles.brandMark} src="/icons/pharmacheck-192.png" alt="" width="44" height="44" />
+      <img className={styles.brandMark} src={`${BASE_PATH}/icons/pharmacheck-192.png`} alt="" width="44" height="44" />
       <div>
         <strong className={styles.brandName}>PharmaCheck</strong>
         <span className={styles.brandTagline}>GPP Inspection</span>

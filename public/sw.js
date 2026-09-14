@@ -1,11 +1,12 @@
-const CACHE_NAME = "pharmacheck-shell-v2";
+const CACHE_NAME = "pharmacheck-shell-v3";
+const APP_ROOT = new URL("./", self.registration.scope).pathname;
 const APP_SHELL = [
-  "/",
-  "/manifest.webmanifest",
-  "/favicon.ico",
-  "/icons/pharmacheck-192.png",
-  "/icons/pharmacheck-512.png",
-  "/icons/apple-touch-icon.png",
+  APP_ROOT,
+  `${APP_ROOT}manifest.webmanifest`,
+  `${APP_ROOT}favicon.ico`,
+  `${APP_ROOT}icons/pharmacheck-192.png`,
+  `${APP_ROOT}icons/pharmacheck-512.png`,
+  `${APP_ROOT}icons/apple-touch-icon.png`,
 ];
 
 self.addEventListener("install", (event) => {
@@ -30,10 +31,10 @@ self.addEventListener("fetch", (event) => {
       fetch(event.request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put("/", copy));
+          caches.open(CACHE_NAME).then((cache) => cache.put(APP_ROOT, copy));
           return response;
         })
-        .catch(() => caches.match("/")),
+        .catch(() => caches.match(APP_ROOT)),
     );
     return;
   }
