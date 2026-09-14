@@ -728,6 +728,29 @@
 .iconButton { width: 46px; min-height: 46px; color: var(--color-muted); background: var(--color-canvas); font-size: 24px; }
 .helpText { padding: 12px 14px; border-radius: 10px; color: #6d531e !important; background: var(--color-warning-soft); font-size: 12px; }
 
+.googleSetupSteps { display: grid; margin-top: 20px; gap: 12px; }
+.googleSetupStep {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  padding: 16px;
+  gap: 12px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-canvas);
+}
+.googleSetupStep p { margin: 3px 0 0; color: var(--color-muted); font-size: 13px; }
+.stepNumber { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; color: white; background: var(--color-primary-700); font-weight: 800; }
+.googleConnectedStatus { display: flex; align-items: center; margin-top: 14px; padding: 13px 15px; gap: 10px; border-radius: var(--radius-sm); color: var(--color-success); background: var(--color-success-soft); }
+.googleConnectedStatus > span { display: grid; width: 27px; height: 27px; place-items: center; border-radius: 50%; color: white; background: var(--color-success); font-weight: 900; }
+.googleConnectedStatus strong,
+.googleConnectedStatus small { display: block; }
+.googleConnectedStatus small { margin-top: 2px; color: #35695a; }
+.googleSetupError { margin-top: 12px; padding: 12px 14px; border-radius: 10px; color: var(--color-danger) !important; background: var(--color-danger-soft); font-size: 13px; }
+.googleAdvancedSettings { margin-top: 16px; padding: 12px 14px; border: 1px dashed var(--color-line); border-radius: var(--radius-sm); }
+.googleAdvancedSettings summary { color: var(--color-muted); font-size: 13px; font-weight: 700; cursor: pointer; }
+.googleAdvancedSettings > button { margin-top: 14px; }
+
 .loadingScreen { display: grid; min-height: 100vh; place-items: center; color: var(--color-muted); }
 
 @keyframes fadeIn { from { opacity: 0; } }
@@ -769,6 +792,8 @@
   .bottomNav button { width: 100%; }
   .homeSyncSummary { grid-template-columns: 1fr; }
   .dialogActions { align-items: stretch; flex-direction: column; }
+  .googleSetupStep { grid-template-columns: 34px 1fr; }
+  .googleSetupStep button { grid-column: 1 / -1; width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

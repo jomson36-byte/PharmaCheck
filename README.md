@@ -14,12 +14,12 @@ npm run dev
 ## Google Sheets setup
 
 1. สร้างโปรเจกต์ใน Google Cloud Console
-2. เปิดใช้งาน Google Sheets API
+2. เปิดใช้งาน Google Sheets API, Google Drive API และ Google Picker API
 3. สร้าง OAuth 2.0 Client ID ประเภท Web application
 4. เพิ่ม URL ของแอปใน Authorized JavaScript origins เช่น `http://localhost:3000`
-5. สร้าง Google Spreadsheet เปล่า
-6. เปิดแอป ไปที่หน้าตรวจสอบ แล้วเลือก `ตั้งค่า`
-7. ใส่ OAuth Client ID และ Spreadsheet ID
+5. สร้าง Browser API key และจำ Project number ของ Google Cloud project
+6. กำหนด `NEXT_PUBLIC_GOOGLE_CLIENT_ID`, `NEXT_PUBLIC_GOOGLE_API_KEY` และ `NEXT_PUBLIC_GOOGLE_APP_ID` ใน `.env.local` หรือใส่ค่าผ่านเมนูสำหรับผู้ดูแลระบบ
+7. เปิดแอป ไปที่ `ตั้งค่า Google` เลือกบัญชี และเลือกไฟล์ Google Sheets จากรายการ
 
 แอปจะสร้างแท็บ `Submissions` และ Header ที่ต้องใช้ให้อัตโนมัติเมื่อส่งครั้งแรก
 

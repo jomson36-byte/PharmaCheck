@@ -3,10 +3,20 @@ import type { SubmissionPayload, SyncQueueItem } from "./models";
 import { questions } from "./questions";
 
 const SHEET_NAME = "Submissions";
-const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+const GOOGLE_SCOPES = [
+  "openid",
+  "email",
+  "profile",
+  "https://www.googleapis.com/auth/spreadsheets",
+  "https://www.googleapis.com/auth/drive.file",
+].join(" ");
 
-type TokenResponse = { access_token?: string; error?: string; error_description?: string };
+type TokenResponse = { access_token?: string; expires_in?: number; error?: string; error_description?: string };
 type TokenClient = { requestAccessToken: (options?: { prompt?: string }) => void };
+type PickerDocument = { id: string; name: string; url?: string };
+type PickerResponse = { action?: string; docs?: PickerDocument[] };
+
+let cachedToken: { clientId: string; accessToken: string; expiresAt: number } | null = null;
 
 declare global {
   interface Window {
@@ -22,7 +32,26 @@ declare global {
           revoke: (token: string, callback?: () => void) => void;
         };
       };
+      picker?: {
+        Action: { PICKED: string; CANCEL: string };
+        DocsViewMode: { LIST: string };
+        ViewId: { SPREADSHEETS: string };
+        DocsView: new (viewId: string) => {
+          setIncludeFolders: (include: boolean) => unknown;
+          setMode: (mode: string) => unknown;
+        };
+        PickerBuilder: new () => {
+          setOAuthToken: (token: string) => unknown;
+          setDeveloperKey: (key: string) => unknown;
+          setAppId: (appId: string) => unknown;
+          setOrigin: (origin: string) => unknown;
+          addView: (view: unknown) => unknown;
+          setCallback: (callback: (data: PickerResponse) => void) => unknown;
+          build: () => { setVisible: (visible: boolean) => void };
+        };
+      };
     };
+    gapi?: { load: (api: string, options: { callback: () => void; onerror: () => void }) => void };
   }
 }
 
@@ -148,21 +177,108 @@ export function loadGoogleIdentityServices() {
   });
 }
 
-export async function requestGoogleAccessToken(clientId: string) {
+export async function requestGoogleAccessToken(clientId: string, selectAccount = false) {
+  if (!selectAccount && cachedToken?.clientId === clientId && cachedToken.expiresAt > Date.now() + 60_000) {
+    return cachedToken.accessToken;
+  }
   await loadGoogleIdentityServices();
   if (!window.google?.accounts.oauth2) throw new Error("Google Sign-in ยังไม่พร้อมใช้งาน");
 
   return new Promise<string>((resolve, reject) => {
     const client = window.google!.accounts.oauth2.initTokenClient({
       client_id: clientId,
-      scope: SHEETS_SCOPE,
+      scope: GOOGLE_SCOPES,
       callback: (response) => {
-        if (response.access_token) resolve(response.access_token);
+        if (response.access_token) {
+          cachedToken = {
+            clientId,
+            accessToken: response.access_token,
+            expiresAt: Date.now() + (response.expires_in ?? 3600) * 1000,
+          };
+          resolve(response.access_token);
+        }
         else reject(new Error(response.error_description || response.error || "ไม่ได้รับสิทธิ์จาก Google"));
       },
       error_callback: () => reject(new Error("การเชื่อมต่อ Google ถูกยกเลิก")),
     });
-    client.requestAccessToken({ prompt: "consent" });
+    client.requestAccessToken({ prompt: selectAccount ? "select_account" : "" });
+  });
+}
+
+export async function connectGoogleAccount(clientId: string) {
+  const accessToken = await requestGoogleAccessToken(clientId, true);
+  const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) throw new Error("อ่านข้อมูลบัญชี Google ไม่สำเร็จ");
+  const profile = await response.json() as { email?: string; name?: string; picture?: string };
+  return { accessToken, email: profile.email ?? "บัญชี Google", name: profile.name, picture: profile.picture };
+}
+
+export function loadGooglePicker() {
+  if (window.google?.picker && window.gapi) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    const loadPickerApi = () => {
+      if (!window.gapi) {
+        reject(new Error("โหลด Google Picker ไม่สำเร็จ"));
+        return;
+      }
+      window.gapi.load("picker", {
+        callback: resolve,
+        onerror: () => reject(new Error("โหลด Google Picker ไม่สำเร็จ")),
+      });
+    };
+    const existing = document.querySelector<HTMLScriptElement>('script[src="https://apis.google.com/js/api.js"]');
+    if (existing) {
+      if (window.gapi) loadPickerApi();
+      else {
+        existing.addEventListener("load", loadPickerApi, { once: true });
+        existing.addEventListener("error", () => reject(new Error("โหลด Google Picker ไม่สำเร็จ")), { once: true });
+      }
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://apis.google.com/js/api.js";
+    script.async = true;
+    script.defer = true;
+    script.onload = loadPickerApi;
+    script.onerror = () => reject(new Error("โหลด Google Picker ไม่สำเร็จ"));
+    document.head.appendChild(script);
+  });
+}
+
+export async function pickGoogleSpreadsheet({
+  accessToken,
+  apiKey,
+  appId,
+}: {
+  accessToken: string;
+  apiKey: string;
+  appId: string;
+}) {
+  await loadGooglePicker();
+  if (!window.google?.picker) throw new Error("Google Picker ยังไม่พร้อมใช้งาน");
+
+  return new Promise<PickerDocument | null>((resolve, reject) => {
+    try {
+      const pickerApi = window.google!.picker!;
+      const view = new pickerApi.DocsView(pickerApi.ViewId.SPREADSHEETS);
+      view.setIncludeFolders(false);
+      view.setMode(pickerApi.DocsViewMode.LIST);
+      const builder = new pickerApi.PickerBuilder();
+      builder.setOAuthToken(accessToken);
+      builder.setDeveloperKey(apiKey);
+      builder.setAppId(appId);
+      builder.setOrigin(window.location.origin);
+      builder.addView(view);
+      builder.setCallback((data) => {
+        if (data.action === pickerApi.Action.PICKED && data.docs?.[0]) resolve(data.docs[0]);
+        else if (data.action === pickerApi.Action.CANCEL) resolve(null);
+      });
+      builder.build().setVisible(true);
+    } catch (error) {
+      reject(error);
+    }
   });
 }
 

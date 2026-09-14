@@ -8,7 +8,13 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useRef, useState } from "react";
 import { createInspection, db, exportBackup, importBackup } from "@/lib/db";
-import { prepareInspectionForSync, requestGoogleAccessToken, syncQueueItem } from "@/lib/googleSheets";
+import {
+  connectGoogleAccount,
+  pickGoogleSpreadsheet,
+  prepareInspectionForSync,
+  requestGoogleAccessToken,
+  syncQueueItem,
+} from "@/lib/googleSheets";
 import type { Answer, AnswerValue, BackupFile, Inspection, ResponsiblePerson } from "@/lib/models";
 import { categories, questions, questionsByCategory, type Question } from "@/lib/questions";
 import styles from "./GppApp.module.css";
@@ -1046,27 +1052,91 @@ function HomeSyncDialog({
 
 function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [clientId, setClientId] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [appId, setAppId] = useState("");
   const [spreadsheetId, setSpreadsheetId] = useState("");
-  const [saved, setSaved] = useState(false);
+  const [spreadsheetName, setSpreadsheetName] = useState("");
+  const [accountEmail, setAccountEmail] = useState("");
+  const [accessToken, setAccessToken] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!open) return;
-    Promise.all([db.settings.get("googleClientId"), db.settings.get("spreadsheetId")]).then(([client, sheet]) => {
-      setClientId(client?.value ?? "");
+    Promise.all([
+      db.settings.get("googleClientId"),
+      db.settings.get("googleApiKey"),
+      db.settings.get("googleAppId"),
+      db.settings.get("spreadsheetId"),
+      db.settings.get("spreadsheetName"),
+      db.settings.get("googleAccountEmail"),
+    ]).then(([client, key, app, sheet, sheetName, email]) => {
+      setClientId(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || client?.value || "");
+      setApiKey(process.env.NEXT_PUBLIC_GOOGLE_API_KEY || key?.value || "");
+      setAppId(process.env.NEXT_PUBLIC_GOOGLE_APP_ID || app?.value || "");
       setSpreadsheetId(sheet?.value ?? "");
+      setSpreadsheetName(sheetName?.value ?? "");
+      setAccountEmail(email?.value ?? "");
+      setAccessToken("");
+      setError("");
     });
   }, [open]);
 
-  async function saveSettings() {
+  async function saveDeveloperSettings() {
     await db.settings.bulkPut([
       { key: "googleClientId", value: clientId.trim() },
-      { key: "spreadsheetId", value: spreadsheetId.trim() },
+      { key: "googleApiKey", value: apiKey.trim() },
+      { key: "googleAppId", value: appId.trim() },
     ]);
-    setSaved(true);
-    setTimeout(() => {
-      setSaved(false);
-      onOpenChange(false);
-    }, 500);
+  }
+
+  async function chooseAccount() {
+    if (!clientId.trim()) {
+      setError("ยังไม่ได้ตั้งค่า Google OAuth Client ID");
+      return;
+    }
+    setConnecting(true);
+    setError("");
+    try {
+      await saveDeveloperSettings();
+      const account = await connectGoogleAccount(clientId.trim());
+      setAccessToken(account.accessToken);
+      setAccountEmail(account.email);
+      await db.settings.put({ key: "googleAccountEmail", value: account.email });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "เชื่อมต่อบัญชี Google ไม่สำเร็จ");
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function chooseSpreadsheet() {
+    if (!accessToken) {
+      setError("กรุณาเลือกบัญชี Google ก่อน");
+      return;
+    }
+    if (!apiKey.trim() || !appId.trim()) {
+      setError("ยังไม่ได้ตั้งค่า Google API Key หรือ Project number");
+      return;
+    }
+    setPicking(true);
+    setError("");
+    try {
+      await saveDeveloperSettings();
+      const sheet = await pickGoogleSpreadsheet({ accessToken, apiKey: apiKey.trim(), appId: appId.trim() });
+      if (!sheet) return;
+      setSpreadsheetId(sheet.id);
+      setSpreadsheetName(sheet.name);
+      await db.settings.bulkPut([
+        { key: "spreadsheetId", value: sheet.id },
+        { key: "spreadsheetName", value: sheet.name },
+      ]);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "เปิดรายการ Google Sheets ไม่สำเร็จ");
+    } finally {
+      setPicking(false);
+    }
   }
 
   return (
@@ -1081,19 +1151,58 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
             </div>
             <Dialog.Close className={styles.iconButton} aria-label="ปิด">×</Dialog.Close>
           </div>
-          <Dialog.Description>ข้อมูลตั้งค่านี้จะเก็บใน iPad เครื่องนี้ ส่วน OAuth Token จะไม่ถูกบันทึกถาวร</Dialog.Description>
-          <label className={styles.field}>
-            <span>Google OAuth Client ID</span>
-            <input value={clientId} onChange={(event) => setClientId(event.target.value)} placeholder="...apps.googleusercontent.com" />
-          </label>
-          <label className={styles.field}>
-            <span>Spreadsheet ID</span>
-            <input value={spreadsheetId} onChange={(event) => setSpreadsheetId(event.target.value)} placeholder="ค่าระหว่าง /d/ และ /edit ใน URL" />
-          </label>
-          <p className={styles.helpText}>ต้องเปิด Google Sheets API ใน Google Cloud และเพิ่มโดเมนของแอปใน Authorized JavaScript origins</p>
+          <Dialog.Description>เลือกบัญชีและไฟล์ Google Sheets ที่ต้องการใช้สำรองข้อมูล โดยไม่ต้องคัดลอก Spreadsheet ID</Dialog.Description>
+
+          <div className={styles.googleSetupSteps}>
+            <section className={styles.googleSetupStep}>
+              <span className={styles.stepNumber}>1</span>
+              <div>
+                <strong>เลือกบัญชี Google</strong>
+                <p>{accountEmail || "ยังไม่ได้เชื่อมต่อบัญชี"}</p>
+              </div>
+              <button className={styles.secondaryButton} onClick={chooseAccount} disabled={connecting}>
+                {connecting ? "กำลังเชื่อมต่อ..." : accountEmail ? "เปลี่ยนบัญชี" : "เลือกบัญชี Google"}
+              </button>
+            </section>
+
+            <section className={styles.googleSetupStep}>
+              <span className={styles.stepNumber}>2</span>
+              <div>
+                <strong>เลือก Google Sheets</strong>
+                <p>{spreadsheetName || "ยังไม่ได้เลือกไฟล์"}</p>
+              </div>
+              <button className={styles.primaryButton} onClick={chooseSpreadsheet} disabled={!accessToken || picking}>
+                {picking ? "กำลังเปิดรายการ..." : spreadsheetId ? "เปลี่ยนไฟล์" : "เลือก Google Sheets"}
+              </button>
+            </section>
+          </div>
+
+          {spreadsheetId && (
+            <div className={styles.googleConnectedStatus}>
+              <span>✓</span>
+              <div><strong>พร้อมใช้งาน</strong><small>{spreadsheetName}</small></div>
+            </div>
+          )}
+          {error && <p className={styles.googleSetupError}>{error}</p>}
+
+          <details className={styles.googleAdvancedSettings}>
+            <summary>การตั้งค่าสำหรับผู้ดูแลระบบ</summary>
+            <label className={styles.field}>
+              <span>Google OAuth Client ID</span>
+              <input value={clientId} onChange={(event) => setClientId(event.target.value)} placeholder="...apps.googleusercontent.com" />
+            </label>
+            <label className={styles.field}>
+              <span>Google API Key</span>
+              <input value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="AIza..." />
+            </label>
+            <label className={styles.field}>
+              <span>Google Cloud Project number</span>
+              <input value={appId} onChange={(event) => setAppId(event.target.value)} inputMode="numeric" placeholder="123456789012" />
+            </label>
+            <button className={styles.secondaryButton} onClick={saveDeveloperSettings}>บันทึกค่าระบบ</button>
+          </details>
           <div className={styles.dialogActions}>
-            <Dialog.Close asChild><button className={styles.secondaryButton}>ยกเลิก</button></Dialog.Close>
-            <button className={styles.primaryButton} onClick={saveSettings} disabled={!clientId.trim() || !spreadsheetId.trim()}>{saved ? "บันทึกแล้ว ✓" : "บันทึกการตั้งค่า"}</button>
+            <Dialog.Close asChild><button className={styles.primaryButton} disabled={!spreadsheetId}>เสร็จสิ้น</button></Dialog.Close>
           </div>
         </Dialog.Content>
       </Dialog.Portal>
