@@ -740,6 +740,7 @@
   background: var(--color-canvas);
 }
 .googleSetupStep p { margin: 3px 0 0; color: var(--color-muted); font-size: 13px; }
+.googleSheetActions { display: flex; gap: 8px; }
 .stepNumber { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; color: white; background: var(--color-primary-700); font-weight: 800; }
 .googleConnectedStatus { display: flex; align-items: center; margin-top: 14px; padding: 13px 15px; gap: 10px; border-radius: var(--radius-sm); color: var(--color-success); background: var(--color-success-soft); }
 .googleConnectedStatus > span { display: grid; width: 27px; height: 27px; place-items: center; border-radius: 50%; color: white; background: var(--color-success); font-weight: 900; }
@@ -757,6 +758,9 @@
 .googleSheetOption small { display: block; }
 .googleSheetOption small { margin-top: 3px; color: var(--color-muted); font-size: 11px; }
 .googleSheetOption b { color: var(--color-primary-700); font-size: 12px; }
+.googleCreateSheet { margin-top: 14px; padding: 16px; border: 1px solid var(--color-primary-200); border-radius: var(--radius-sm); background: var(--color-primary-50); }
+.googleCreateSheet .field { margin-top: 0; }
+.googleCreateSheet > div { display: flex; justify-content: flex-end; margin-top: 12px; gap: 8px; }
 
 .loadingScreen { display: grid; min-height: 100vh; place-items: center; color: var(--color-muted); }
 
@@ -800,7 +804,10 @@
   .homeSyncSummary { grid-template-columns: 1fr; }
   .dialogActions { align-items: stretch; flex-direction: column; }
   .googleSetupStep { grid-template-columns: 34px 1fr; }
-  .googleSetupStep button { grid-column: 1 / -1; width: 100%; }
+  .googleSetupStep > button,
+  .googleSheetActions { grid-column: 1 / -1; width: 100%; }
+  .googleSheetActions button { flex: 1; }
+  .googleCreateSheet > div { flex-direction: column; }
 }
 
 @media (prefers-reduced-motion: reduce) {

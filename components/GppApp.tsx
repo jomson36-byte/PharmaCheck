@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { createInspection, db, exportBackup, importBackup } from "@/lib/db";
 import {
   connectGoogleAccount,
+  createGoogleSpreadsheet,
   listGoogleSpreadsheets,
   prepareInspectionForSync,
   requestGoogleAccessToken,
@@ -1064,8 +1065,11 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   const [accessToken, setAccessToken] = useState("");
   const [spreadsheets, setSpreadsheets] = useState<GoogleSpreadsheet[]>([]);
   const [showSpreadsheetList, setShowSpreadsheetList] = useState(false);
+  const [showCreateSheet, setShowCreateSheet] = useState(false);
+  const [newSheetName, setNewSheetName] = useState("PharmaCheck GPP");
   const [connecting, setConnecting] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [creatingSheet, setCreatingSheet] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -1081,6 +1085,7 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       setAccessToken("");
       setSpreadsheets([]);
       setShowSpreadsheetList(false);
+      setShowCreateSheet(false);
       setError("");
     });
   }, [open]);
@@ -1133,6 +1138,22 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
     ]);
   }
 
+  async function createSpreadsheet() {
+    const title = newSheetName.trim();
+    if (!accessToken || !title) return;
+    setCreatingSheet(true);
+    setError("");
+    try {
+      const sheet = await createGoogleSpreadsheet(accessToken, title);
+      await selectSpreadsheet(sheet);
+      setShowCreateSheet(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "สร้าง Google Sheets ไม่สำเร็จ");
+    } finally {
+      setCreatingSheet(false);
+    }
+  }
+
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
@@ -1165,11 +1186,36 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                 <strong>เลือก Google Sheets</strong>
                 <p>{spreadsheetName || "ยังไม่ได้เลือกไฟล์"}</p>
               </div>
-              <button className={styles.primaryButton} onClick={chooseSpreadsheet} disabled={!accessToken || picking}>
-                {picking ? "กำลังเปิดรายการ..." : spreadsheetId ? "เปลี่ยนไฟล์" : "เลือก Google Sheets"}
-              </button>
+              <div className={styles.googleSheetActions}>
+                <button className={styles.secondaryButton} onClick={() => setShowCreateSheet(true)} disabled={!accessToken || creatingSheet}>
+                  ＋ สร้างใหม่
+                </button>
+                <button className={styles.primaryButton} onClick={chooseSpreadsheet} disabled={!accessToken || picking}>
+                  {picking ? "กำลังเปิดรายการ..." : spreadsheetId ? "เปลี่ยนไฟล์" : "เลือก Google Sheets"}
+                </button>
+              </div>
             </section>
           </div>
+
+          {showCreateSheet && (
+            <div className={styles.googleCreateSheet}>
+              <label className={styles.field}>
+                <span>ชื่อ Google Sheets ใหม่</span>
+                <input
+                  value={newSheetName}
+                  onChange={(event) => setNewSheetName(event.target.value)}
+                  placeholder="PharmaCheck GPP"
+                  autoFocus
+                />
+              </label>
+              <div>
+                <button className={styles.secondaryButton} onClick={() => setShowCreateSheet(false)} disabled={creatingSheet}>ยกเลิก</button>
+                <button className={styles.primaryButton} onClick={createSpreadsheet} disabled={!newSheetName.trim() || creatingSheet}>
+                  {creatingSheet ? "กำลังสร้าง..." : "สร้างและเลือกไฟล์นี้"}
+                </button>
+              </div>
+            </div>
+          )}
 
           {showSpreadsheetList && (
             <div className={styles.googleSheetList}>

@@ -219,6 +219,28 @@ export async function listGoogleSpreadsheets(accessToken: string) {
   return data.files ?? [];
 }
 
+export async function createGoogleSpreadsheet(accessToken: string, title: string) {
+  const response = await fetch("https://sheets.googleapis.com/v4/spreadsheets", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ properties: { title } }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body?.error?.message || "สร้าง Google Sheets ไม่สำเร็จ");
+  }
+  const spreadsheet = await response.json() as { spreadsheetId: string; spreadsheetUrl?: string };
+  await ensureSubmissionsSheet(spreadsheet.spreadsheetId, accessToken);
+  return {
+    id: spreadsheet.spreadsheetId,
+    name: title,
+    webViewLink: spreadsheet.spreadsheetUrl,
+  } satisfies GoogleSpreadsheet;
+}
+
 async function sheetsFetch<T>(url: string, token: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
