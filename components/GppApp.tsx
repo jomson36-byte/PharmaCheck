@@ -393,31 +393,26 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
   const tabOrder = ["info", ...categories.map((category) => category.code), "review"];
   const currentIndex = tabOrder.indexOf(activeTab);
 
-  function scrollToEditorTop() {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => editorTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
-    });
-  }
-
   function handleNextStep() {
-    if (categories.some((category) => category.code === activeTab)) {
-      const firstIncomplete = questionsByCategory[activeTab].find((question) => {
-        const answer = answers.find((item) => item.questionCode === question.code);
-        return !answer || answer.selectedValue === null || (answer.selectedValue === "NA" && !answer.notApplicableReason.trim());
-      });
-      if (firstIncomplete) {
-        const card = document.querySelector<HTMLElement>(`[data-question-code="${firstIncomplete.code}"]`);
-        card?.scrollIntoView({ behavior: "smooth", block: "center" });
-        window.setTimeout(() => card?.querySelector<HTMLElement>('[role="radio"]')?.focus({ preventScroll: true }), 450);
-        setNotice({ tone: "warning", text: `กรุณาเลือกคำตอบข้อ ${firstIncomplete.code} ก่อนดำเนินการต่อ` });
-        return;
-      }
-    }
-
     const nextTab = tabOrder[Math.min(tabOrder.length - 1, currentIndex + 1)];
     setActiveTab(nextTab);
     setNotice(null);
-    scrollToEditorTop();
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const firstIncomplete = questionsByCategory[nextTab]?.find((question) => {
+          const answer = answers.find((item) => item.questionCode === question.code);
+          return !answer || answer.selectedValue === null || (answer.selectedValue === "NA" && !answer.notApplicableReason.trim());
+        });
+        if (firstIncomplete) {
+          const card = document.querySelector<HTMLElement>(`[data-question-code="${firstIncomplete.code}"]`);
+          card?.scrollIntoView({ behavior: "smooth", block: "center" });
+          window.setTimeout(() => card?.querySelector<HTMLElement>('[role="radio"]')?.focus({ preventScroll: true }), 450);
+          return;
+        }
+        editorTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
   }
 
   if (inspection === undefined) {
