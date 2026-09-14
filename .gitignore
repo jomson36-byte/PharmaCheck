@@ -20,6 +20,7 @@
 Thumbs.db
 .vscode
 .idea
+/.codex/
 
 # TypeScript
 *.tsbuildinfo

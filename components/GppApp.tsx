@@ -24,6 +24,9 @@ const statusLabels: Record<Inspection["status"], string> = {
   SYNC_ERROR: "ส่งไม่สำเร็จ",
 };
 
+const SWIPE_DELETE_WIDTH = 92;
+const SWIPE_OPEN_THRESHOLD = 44;
+
 function formatDate(value: string) {
   if (!value) return "ยังไม่ระบุวันที่";
   return new Intl.DateTimeFormat("th-TH", { dateStyle: "medium" }).format(new Date(`${value}T00:00:00`));
@@ -77,6 +80,12 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const [syncCenterOpen, setSyncCenterOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Inspection | null>(null);
+  const [swipeOffsets, setSwipeOffsets] = useState<Record<string, number>>({});
+  const [deleting, setDeleting] = useState(false);
+  const [draggingRowId, setDraggingRowId] = useState<string | null>(null);
+  const swipeStart = useRef<{ id: string; x: number; y: number; base: number; decided: boolean } | null>(null);
+  const touchCreateLock = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   async function handleCreate() {
@@ -89,6 +98,103 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
     } finally {
       setCreating(false);
     }
+  }
+
+  async function handleCreateTouch() {
+    if (creating || touchCreateLock.current) return;
+    touchCreateLock.current = true;
+    try {
+      await handleCreate();
+    } finally {
+      touchCreateLock.current = false;
+    }
+  }
+
+  async function handleDeleteInspection() {
+    if (!deleteTarget || deleting) return;
+    const target = deleteTarget;
+    setDeleting(true);
+    try {
+      await db.transaction("rw", db.inspections, db.answers, db.responsiblePersons, db.syncQueue, async () => {
+        await db.answers.where("inspectionId").equals(target.id).delete();
+        await db.responsiblePersons.where("inspectionId").equals(target.id).delete();
+        await db.syncQueue.where("inspectionId").equals(target.id).delete();
+        await db.inspections.delete(target.id);
+      });
+      setNotice({ tone: "success", text: `ลบแบบตรวจ "${target.pharmacyName || "แบบตรวจนี้"}" แล้ว` });
+    } catch (error) {
+      setNotice({ tone: "danger", text: error instanceof Error ? error.message : "ลบแบบตรวจไม่สำเร็จ" });
+    } finally {
+      setDeleteTarget(null);
+      setDeleting(false);
+      setSwipeOffsets({});
+    }
+  }
+
+  function beginSwipe(id: string, eventX: number, eventY: number) {
+    const baseOffset = swipeOffsets[id] ?? 0;
+    swipeStart.current = { id, x: eventX, y: eventY, base: baseOffset, decided: false };
+    setDraggingRowId(id);
+    setSwipeOffsets((prev) => {
+      const next: Record<string, number> = {};
+      Object.keys(prev).forEach((currentId) => {
+        if (currentId === id) return;
+        next[currentId] = 0;
+      });
+      next[id] = baseOffset;
+      return next;
+    });
+  }
+
+  function updateSwipe(id: string, eventX: number, eventY: number) {
+    if (!swipeStart.current || swipeStart.current.id !== id) return;
+    const deltaX = swipeStart.current.x - eventX;
+    const deltaY = eventY - swipeStart.current.y;
+
+    if (!swipeStart.current.decided) {
+      if (Math.abs(deltaX) < 6 && Math.abs(deltaY) < 6) return;
+      if (Math.abs(deltaY) > Math.abs(deltaX) + 8) {
+        swipeStart.current = null;
+        setDraggingRowId(null);
+        return;
+      }
+      swipeStart.current.decided = true;
+    }
+
+    if (swipeStart.current.base === 0 && deltaX < 0) return;
+    const nextOffset = Math.max(0, Math.min(SWIPE_DELETE_WIDTH, swipeStart.current.base + deltaX));
+    setSwipeOffsets((prev) => {
+      if ((prev[id] ?? 0) === nextOffset) return prev;
+      return { ...prev, [id]: nextOffset };
+    });
+  }
+
+  function endSwipe(id: string) {
+    if (!swipeStart.current || swipeStart.current.id !== id) return;
+    setSwipeOffsets((prev) => {
+      const currentOffset = prev[id] ?? 0;
+      const next: Record<string, number> = {};
+      Object.keys(prev).forEach((currentId) => {
+        if (currentId === id) return;
+        next[currentId] = 0;
+      });
+      next[id] = currentOffset >= SWIPE_OPEN_THRESHOLD ? SWIPE_DELETE_WIDTH : 0;
+      return next;
+    });
+    swipeStart.current = null;
+    setDraggingRowId(null);
+  }
+
+  function cancelSwipe() {
+    swipeStart.current = null;
+    setDraggingRowId(null);
+    setSwipeOffsets((prev) => {
+      const next: Record<string, number> = {};
+      Object.keys(prev).forEach((id) => {
+        next[id] = 0;
+      });
+      return next;
+    });
   }
 
   async function handleExport() {
@@ -131,7 +237,16 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
             <span aria-hidden="true">↥</span> ส่ง Google Sheets
             {unsyncedCount > 0 && <b>{unsyncedCount}</b>}
           </button>
-          <button className={styles.primaryButton} onClick={handleCreate} disabled={creating}>
+          <button
+            className={styles.primaryButton}
+            onClick={() => {
+              if (!touchCreateLock.current) {
+                handleCreate();
+              }
+            }}
+            onTouchStart={handleCreateTouch}
+            disabled={creating}
+          >
             <span aria-hidden="true">＋</span> {creating ? "กำลังสร้าง..." : "เริ่มการตรวจใหม่"}
           </button>
         </div>
@@ -182,19 +297,71 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
         ) : (
           <div className={styles.inspectionList}>
             {inspections.map((inspection) => (
-              <button key={inspection.id} className={styles.inspectionRow} onClick={() => onOpen(inspection.id)}>
-                <span className={styles.inspectionIcon}>{inspection.pharmacyName?.slice(0, 1) || "ร"}</span>
-                <span className={styles.inspectionMain}>
-                  <strong>{inspection.pharmacyName || "แบบตรวจใหม่"}</strong>
-                  <span>{inspection.licenseNumber || "ยังไม่ระบุเลขใบอนุญาต"} · {formatDate(inspection.inspectionDate)}</span>
-                </span>
-                <span className={`${styles.statusPill} ${styles[`status_${inspection.status}`]}`}>{statusLabels[inspection.status]}</span>
-                <span className={styles.chevron}>›</span>
-              </button>
+              <div key={inspection.id} className={styles.inspectionSwipeRow}>
+                <div className={styles.inspectionSwipeAction}>
+                  <button
+                    type="button"
+                    className={styles.inspectionDeleteButton}
+                    onClick={() => setDeleteTarget(inspection)}
+                  >
+                    ลบ
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className={styles.inspectionRow}
+                  onClick={() => {
+                    if (swipeOffsets[inspection.id]) {
+                      setSwipeOffsets((prev) => ({ ...prev, [inspection.id]: 0 }));
+                      return;
+                    }
+                    onOpen(inspection.id);
+                  }}
+                  onTouchStart={(event) => {
+                    beginSwipe(inspection.id, event.touches[0].clientX, event.touches[0].clientY);
+                  }}
+                  onTouchMove={(event) => {
+                    updateSwipe(inspection.id, event.touches[0].clientX, event.touches[0].clientY);
+                  }}
+                  onTouchEnd={() => endSwipe(inspection.id)}
+                  onTouchCancel={cancelSwipe}
+                  style={{
+                    transform: `translateX(-${swipeOffsets[inspection.id] ?? 0}px)`,
+                    transition: draggingRowId === inspection.id ? "none" : "transform 190ms ease",
+                  }}
+                >
+                  <span className={styles.inspectionIcon}>{inspection.pharmacyName?.slice(0, 1) || "ร"}</span>
+                  <span className={styles.inspectionMain}>
+                    <strong>{inspection.pharmacyName || "แบบตรวจใหม่"}</strong>
+                    <span>{inspection.licenseNumber || "ยังไม่ระบุเลขใบอนุญาต"} · {formatDate(inspection.inspectionDate)}</span>
+                  </span>
+                  <span className={`${styles.statusPill} ${styles[`status_${inspection.status}`]}`}>{statusLabels[inspection.status]}</span>
+                  <span className={styles.chevron}>›</span>
+                </button>
+              </div>
             ))}
           </div>
         )}
       </section>
+      <AlertDialog.Root open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className={styles.dialogOverlay} />
+          <AlertDialog.Content className={styles.dialogContent}>
+            <AlertDialog.Title>ลบแบบตรวจนี้หรือไม่?</AlertDialog.Title>
+            <AlertDialog.Description>
+              {deleteTarget ? `${deleteTarget.pharmacyName || "แบบตรวจนี้"} จะถูกลบออกจาก iPad และรายการที่ยังไม่ส่งข้อมูลนั้น ๆ จะถูกลบตามไปด้วย` : ""}
+            </AlertDialog.Description>
+            <div className={styles.dialogActions}>
+              <AlertDialog.Cancel asChild><button className={styles.secondaryButton}>ยกเลิก</button></AlertDialog.Cancel>
+              <AlertDialog.Action asChild>
+                <button className={styles.dangerButton} onClick={handleDeleteInspection} disabled={deleting}>
+                  {deleting ? "กำลังลบ..." : "ยืนยันการลบ"}
+                </button>
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
       <HomeSyncDialog
         open={syncCenterOpen}
         onOpenChange={setSyncCenterOpen}

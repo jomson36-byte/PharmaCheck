@@ -30,10 +30,17 @@ function localDateParts() {
   return { date: local.slice(0, 10), time: local.slice(11, 16) };
 }
 
+function newId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `tmp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export async function getDeviceId() {
   const existing = await db.settings.get("deviceId");
   if (existing) return existing.value;
-  const value = crypto.randomUUID();
+  const value = newId();
   await db.settings.put({ key: "deviceId", value });
   return value;
 }
@@ -42,7 +49,7 @@ export async function createInspection() {
   const now = new Date().toISOString();
   const { date, time } = localDateParts();
   const inspection: Inspection = {
-    id: crypto.randomUUID(),
+    id: newId(),
     schemaVersion: "1",
     templateVersion: "GPP-2014-v1",
     deviceId: await getDeviceId(),
@@ -65,7 +72,7 @@ export async function createInspection() {
   };
 
   const answers: Answer[] = questions.map((question) => ({
-    id: crypto.randomUUID(),
+    id: newId(),
     inspectionId: inspection.id,
     questionCode: question.code,
     questionTextSnapshot: question.text,
