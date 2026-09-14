@@ -18,6 +18,21 @@ class PharmaCheckDatabase extends Dexie {
       syncQueue: "id, syncBatchId, inspectionId, status, createdAt",
       settings: "key",
     });
+    this.version(2).stores({
+      inspections: "id, status, updatedAt, inspectionDate, licenseNumber",
+      answers: "id, inspectionId, [inspectionId+questionCode], categoryCode, updatedAt",
+      responsiblePersons: "id, inspectionId",
+      syncQueue: "id, syncBatchId, inspectionId, status, createdAt",
+      settings: "key",
+    }).upgrade(async (transaction) => {
+      const fullTextByCode = new Map(questions.map((question) => [question.code, question.fullText]));
+      await transaction.table("answers").toCollection().modify((answer: Answer) => {
+        answer.questionTextSnapshot = fullTextByCode.get(answer.questionCode) ?? answer.questionTextSnapshot;
+      });
+      await transaction.table("inspections").toCollection().modify((inspection: Inspection) => {
+        inspection.templateVersion = "GPP-2014-v2";
+      });
+    });
   }
 }
 
@@ -51,7 +66,7 @@ export async function createInspection() {
   const inspection: Inspection = {
     id: newId(),
     schemaVersion: "1",
-    templateVersion: "GPP-2014-v1",
+    templateVersion: "GPP-2014-v2",
     deviceId: await getDeviceId(),
     inspectionDate: date,
     startTime: time,
@@ -65,6 +80,7 @@ export async function createInspection() {
     telephone: "",
     fax: "",
     mobile: "",
+    signatures: [],
     status: "LOCAL_DRAFT",
     localRevision: 1,
     createdAt: now,
@@ -75,7 +91,7 @@ export async function createInspection() {
     id: newId(),
     inspectionId: inspection.id,
     questionCode: question.code,
-    questionTextSnapshot: question.text,
+    questionTextSnapshot: question.fullText,
     categoryCode: question.categoryCode,
     selectedValue: null,
     weightSnapshot: question.weight,

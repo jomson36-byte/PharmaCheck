@@ -7,6 +7,15 @@ export type InspectionStatus =
   | "SYNCED"
   | "SYNC_ERROR";
 
+export type InspectionSignatureRole = "licensee" | "duty_officer" | "assessor_1" | "assessor_2" | "witness_1" | "witness_2";
+
+export interface InspectionSignature {
+  role: InspectionSignatureRole;
+  name: string;
+  signature: string;
+  signedAt: string;
+}
+
 export interface Inspection {
   id: string;
   schemaVersion: string;
@@ -24,6 +33,7 @@ export interface Inspection {
   telephone: string;
   fax: string;
   mobile: string;
+  signatures: InspectionSignature[];
   status: InspectionStatus;
   localRevision: number;
   lastSyncedRevision?: number;

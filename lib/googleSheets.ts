@@ -1,5 +1,5 @@
 import { db } from "./db";
-import type { SubmissionPayload, SyncQueueItem } from "./models";
+import type { InspectionSignatureRole, SubmissionPayload, SyncQueueItem } from "./models";
 import { questions } from "./questions";
 
 const SHEET_NAME = "Submissions";
@@ -10,6 +10,7 @@ const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/spreadsheets",
   "https://www.googleapis.com/auth/drive.metadata.readonly",
 ].join(" ");
+const SIGNATURE_ROLES: InspectionSignatureRole[] = ["licensee", "duty_officer", "assessor_1", "assessor_2", "witness_1", "witness_2"];
 
 type TokenResponse = { access_token?: string; expires_in?: number; error?: string; error_description?: string };
 type TokenClient = { requestAccessToken: (options?: { prompt?: string }) => void };
@@ -19,6 +20,20 @@ export type GoogleSpreadsheet = {
   name: string;
   modifiedTime?: string;
   webViewLink?: string;
+};
+
+type GooglePullItem = {
+  payload: SubmissionPayload;
+  revision: number;
+  syncedAt: string;
+  localUpdatedAt?: string;
+};
+
+export type GooglePullPreview = {
+  additions: GooglePullItem[];
+  updates: GooglePullItem[];
+  conflicts: GooglePullItem[];
+  unchanged: number;
 };
 
 let cachedToken: { clientId: string; accessToken: string; expiresAt: number } | null = null;
@@ -69,11 +84,14 @@ export const sheetHeaders = [
   "updated_at",
   "synced_at",
   "payload_json",
+  ...SIGNATURE_ROLES.map((role) => `signature_${role}_json`),
 ];
 
 function canonicalPayload(payload: SubmissionPayload) {
+  const { signatures: _signatures, ...inspectionWithoutSignatures } = payload.inspection;
   return JSON.stringify({
     ...payload,
+    inspection: inspectionWithoutSignatures,
     answers: [...payload.answers].sort((a, b) => a.questionCode.localeCompare(b.questionCode, undefined, { numeric: true })),
     responsiblePersons: [...payload.responsiblePersons].sort((a, b) => a.id.localeCompare(b.id)),
   });
@@ -284,8 +302,15 @@ async function ensureSubmissionsSheet(spreadsheetId: string, token: string) {
   }
 
   const currentHeaders = current.values[0];
-  if (currentHeaders.join("|") !== sheetHeaders.join("|")) {
+  const isCompatiblePrefix = currentHeaders.every((header, index) => header === sheetHeaders[index]);
+  if (!isCompatiblePrefix) {
     throw new Error("หัวตาราง Submissions ไม่ตรงกับเวอร์ชันของแอป กรุณาเลือก Spreadsheet ใหม่");
+  }
+  if (currentHeaders.length < sheetHeaders.length) {
+    await sheetsFetch(`${base}/values/${headerRange}?valueInputOption=RAW`, token, {
+      method: "PUT",
+      body: JSON.stringify({ values: [sheetHeaders] }),
+    });
   }
 }
 
@@ -326,7 +351,127 @@ function createSheetRow(item: SyncQueueItem) {
     inspection.updatedAt,
     syncedAt,
     canonicalPayload(item.payloadSnapshot),
+    ...SIGNATURE_ROLES.map((role) => {
+      const signature = inspection.signatures?.find((entry) => entry.role === role);
+      return signature ? JSON.stringify(signature) : "";
+    }),
   ];
+}
+
+export async function previewGoogleSheetPull(spreadsheetId: string, token: string): Promise<GooglePullPreview> {
+  if (!navigator.onLine) throw new Error("ยังไม่มีอินเทอร์เน็ต ไม่สามารถดึงข้อมูลจาก Google Sheets ได้");
+
+  await ensureSubmissionsSheet(spreadsheetId, token);
+  const base = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}`;
+  const range = encodeURIComponent(`${SHEET_NAME}!A:ZZ`);
+  const data = await sheetsFetch<{ values?: unknown[][] }>(`${base}/values/${range}`, token);
+  const [headers = [], ...rows] = data.values ?? [];
+  const inspectionIdIndex = headers.indexOf("inspection_id");
+  const revisionIndex = headers.indexOf("revision");
+  const syncedAtIndex = headers.indexOf("synced_at");
+  const payloadIndex = headers.indexOf("payload_json");
+
+  if ([inspectionIdIndex, revisionIndex, payloadIndex].some((index) => index < 0)) {
+    throw new Error("Google Sheets ไม่มีคอลัมน์สำหรับดึงข้อมูลกลับ กรุณาเลือกไฟล์ที่สร้างโดย PharmaCheck");
+  }
+
+  const latestByInspection = new Map<string, GooglePullItem>();
+  for (const row of rows) {
+    const inspectionId = String(row[inspectionIdIndex] ?? "");
+    const revision = Number(row[revisionIndex]);
+    if (!inspectionId || !Number.isInteger(revision) || revision < 1) continue;
+
+    try {
+      const payload = JSON.parse(String(row[payloadIndex] ?? "")) as SubmissionPayload;
+      const signatures = SIGNATURE_ROLES.flatMap((role) => {
+        const index = headers.indexOf(`signature_${role}_json`);
+        if (index < 0 || !row[index]) return [];
+        try {
+          const signature = JSON.parse(String(row[index]));
+          return signature?.role === role ? [signature] : [];
+        } catch {
+          return [];
+        }
+      });
+      payload.inspection.signatures = signatures.length ? signatures : payload.inspection.signatures ?? [];
+      if (
+        payload?.inspection?.id !== inspectionId ||
+        !Array.isArray(payload.answers) ||
+        !Array.isArray(payload.responsiblePersons) ||
+        payload.answers.some((answer) => !answer?.id || answer.inspectionId !== inspectionId) ||
+        payload.responsiblePersons.some((person) => !person?.id || person.inspectionId !== inspectionId)
+      ) continue;
+
+      const item: GooglePullItem = {
+        payload,
+        revision,
+        syncedAt: String(row[syncedAtIndex] ?? payload.exportedAt ?? new Date().toISOString()),
+      };
+      const current = latestByInspection.get(inspectionId);
+      if (!current || item.revision > current.revision || (item.revision === current.revision && item.syncedAt > current.syncedAt)) {
+        latestByInspection.set(inspectionId, item);
+      }
+    } catch {
+      // Ignore malformed rows instead of risking corrupt local data.
+    }
+  }
+
+  const preview: GooglePullPreview = { additions: [], updates: [], conflicts: [], unchanged: 0 };
+  for (const item of latestByInspection.values()) {
+    const local = await db.inspections.get(item.payload.inspection.id);
+    if (!local) {
+      preview.additions.push(item);
+      continue;
+    }
+
+    const lastSyncedRevision = local.lastSyncedRevision ?? 0;
+    if (item.revision <= lastSyncedRevision) {
+      preview.unchanged += 1;
+      continue;
+    }
+
+    item.localUpdatedAt = local.updatedAt;
+    if (local.status === "SYNCED") preview.updates.push(item);
+    else preview.conflicts.push(item);
+  }
+
+  return preview;
+}
+
+export async function applyGoogleSheetPull(preview: GooglePullPreview) {
+  let added = 0;
+  let updated = 0;
+  let conflicts = preview.conflicts.length;
+
+  await db.transaction("rw", db.inspections, db.answers, db.responsiblePersons, db.syncQueue, async () => {
+    for (const [kind, items] of [["add", preview.additions], ["update", preview.updates]] as const) {
+      for (const item of items) {
+        const inspectionId = item.payload.inspection.id;
+        const local = await db.inspections.get(inspectionId);
+        if (kind === "add" ? Boolean(local) : !local || local.status !== "SYNCED" || local.updatedAt !== item.localUpdatedAt) {
+          conflicts += 1;
+          continue;
+        }
+
+        const inspection: SubmissionPayload["inspection"] = {
+          ...item.payload.inspection,
+          status: "SYNCED",
+          lastSyncedRevision: item.revision,
+          lastSyncedAt: item.syncedAt,
+        };
+        await db.answers.where("inspectionId").equals(inspectionId).delete();
+        await db.responsiblePersons.where("inspectionId").equals(inspectionId).delete();
+        await db.syncQueue.where("inspectionId").equals(inspectionId).delete();
+        await db.inspections.put(inspection);
+        if (item.payload.answers.length) await db.answers.bulkPut(item.payload.answers);
+        if (item.payload.responsiblePersons.length) await db.responsiblePersons.bulkPut(item.payload.responsiblePersons);
+        if (kind === "add") added += 1;
+        else updated += 1;
+      }
+    }
+  });
+
+  return { added, updated, conflicts, unchanged: preview.unchanged };
 }
 
 export async function syncQueueItem(item: SyncQueueItem, spreadsheetId: string, token: string) {

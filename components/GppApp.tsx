@@ -9,15 +9,17 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useRef, useState } from "react";
 import { createInspection, db, exportBackup, importBackup } from "@/lib/db";
 import {
+  applyGoogleSheetPull,
   connectGoogleAccount,
   createGoogleSpreadsheet,
   listGoogleSpreadsheets,
   prepareInspectionForSync,
+  previewGoogleSheetPull,
   requestGoogleAccessToken,
   syncQueueItem,
 } from "@/lib/googleSheets";
-import type { GoogleSpreadsheet } from "@/lib/googleSheets";
-import type { Answer, AnswerValue, BackupFile, Inspection, ResponsiblePerson } from "@/lib/models";
+import type { GooglePullPreview, GoogleSpreadsheet } from "@/lib/googleSheets";
+import type { Answer, AnswerValue, BackupFile, Inspection, InspectionSignature, InspectionSignatureRole, ResponsiblePerson } from "@/lib/models";
 import { categories, questions, questionsByCategory, type Question } from "@/lib/questions";
 import styles from "./GppApp.module.css";
 
@@ -55,6 +57,11 @@ function formatDate(value: string) {
 function formatDateTime(value?: string) {
   if (!value) return "ยังไม่เคยส่ง";
   return new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function getDisplayedRevision(inspection: Inspection) {
+  const lastSyncedRevision = inspection.lastSyncedRevision ?? 0;
+  return inspection.status === "SYNCED" ? Math.max(1, lastSyncedRevision) : lastSyncedRevision + 1;
 }
 
 export function GppApp() {
@@ -268,7 +275,10 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
                     <strong>{inspection.pharmacyName || "แบบตรวจใหม่"}</strong>
                     <span>{inspection.licenseNumber || "ยังไม่ระบุเลขใบอนุญาต"} · {formatDate(inspection.inspectionDate)}</span>
                   </span>
-                  <span className={`${styles.statusPill} ${styles[`status_${inspection.status}`]}`}>{statusLabels[inspection.status]}</span>
+                  <span className={styles.inspectionStatusGroup}>
+                    <span className={styles.revisionPill}>Rev. {getDisplayedRevision(inspection)}</span>
+                    <span className={`${styles.statusPill} ${styles[`status_${inspection.status}`]}`}>{statusLabels[inspection.status]}</span>
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -429,12 +439,29 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
     return <main className={styles.loadingScreen}><p>ไม่พบแบบตรวจนี้ใน iPad</p><button onClick={onBack}>กลับหน้าแรก</button></main>;
   }
 
-  async function saveInspectionField(field: keyof Inspection, value: string) {
+  async function saveInspectionChanges(changes: Partial<Inspection>) {
     await db.inspections.where("id").equals(inspectionId).modify((record) => {
-      Object.assign(record, { [field]: value });
+      Object.assign(record, changes);
       record.localRevision += 1;
       record.updatedAt = new Date().toISOString();
       if (record.status === "SYNCED" || record.status === "SYNC_ERROR") record.status = "LOCAL_DRAFT";
+    });
+  }
+
+  async function saveInspectionField(field: keyof Inspection, value: string) {
+    const signatureRole = field === "inspector1" ? "assessor_1" : field === "inspector2" ? "assessor_2" : null;
+    if (!signatureRole) {
+      await saveInspectionChanges({ [field]: value });
+      return;
+    }
+
+    const signatures = inspection?.signatures ?? [];
+    await saveInspectionChanges({
+      [field]: value,
+      signatures: [
+        ...signatures.filter((signature) => signature.role !== signatureRole),
+        { role: signatureRole, name: value, signature: "", signedAt: "" },
+      ],
     });
   }
 
@@ -492,9 +519,10 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
   const missingNaReasons = answers.filter((answer) => answer.selectedValue === "NA" && !answer.notApplicableReason.trim()).length;
 
   async function handleSync() {
-    if (requiredMissing.length || unanswered || missingNaReasons) {
+    const licenseeSignature = inspection?.signatures?.find((signature) => signature.role === "licensee");
+    if (requiredMissing.length || unanswered || missingNaReasons || !licenseeSignature?.name.trim() || !licenseeSignature.signature || !licenseeSignature.signedAt) {
       setActiveTab("review");
-      setNotice({ tone: "warning", text: "กรุณาตรวจรายการที่ยังไม่ครบก่อนส่งข้อมูล" });
+      setNotice({ tone: "warning", text: "กรุณาตรวจข้อมูลและให้เจ้าของร้านลงชื่อรับรองก่อนส่ง" });
       return;
     }
     const clientId = await getConfiguredGoogleClientId();
@@ -590,12 +618,14 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
             <ReviewPanel
               inspection={inspection}
               answers={answers}
+              responsiblePersons={responsiblePersons}
               requiredMissing={requiredMissing}
               unanswered={unanswered}
               missingNaReasons={missingNaReasons}
               online={online}
               syncing={syncing}
               onSync={handleSync}
+              onSaveCertification={saveInspectionChanges}
               onOpenSettings={() => setSettingsOpen(true)}
               onDeleted={onBack}
             />
@@ -790,11 +820,10 @@ function QuestionCard({ question, answer, onSave }: { question: Question; answer
         </div>
       </div>
       <h2>{question.text}</h2>
-      {question.criteria && (
-        <ul className={styles.criteriaList}>
-          {question.criteria.map((criterion) => <li key={criterion}>{criterion}</li>)}
-        </ul>
-      )}
+      <details className={styles.sourceTextDisclosure}>
+        <summary>ดูข้อความตามเอกสารต้นฉบับ <span>หน้า {question.sourcePage}</span></summary>
+        <p>{question.fullText}</p>
+      </details>
       <RadioGroup.Root
         className={`${styles.scoreGroup} ${question.excludable ? styles.scoreGroupFour : ""}`}
         value={answer.selectedValue === null ? "" : String(answer.selectedValue)}
@@ -837,34 +866,151 @@ function QuestionCard({ question, answer, onSave }: { question: Question; answer
   );
 }
 
+function SignaturePad({ value, label, onChange }: { value: string; label: string; onChange: (value: string) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const drawing = useRef(false);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    const width = canvas.clientWidth;
+    const height = 138;
+    canvas.width = Math.max(1, Math.round(width * ratio));
+    canvas.height = Math.round(height * ratio);
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, width, height);
+    context.strokeStyle = "#073f38";
+    context.lineWidth = 2.4;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+
+    if (value) {
+      const image = new Image();
+      image.onload = () => context.drawImage(image, 0, 0, width, height);
+      image.src = value;
+    }
+  }, [value]);
+
+  function point(event: React.PointerEvent<HTMLCanvasElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  }
+
+  function startDrawing(event: React.PointerEvent<HTMLCanvasElement>) {
+    const context = event.currentTarget.getContext("2d");
+    if (!context) return;
+    drawing.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const { x, y } = point(event);
+    context.beginPath();
+    context.moveTo(x, y);
+  }
+
+  function draw(event: React.PointerEvent<HTMLCanvasElement>) {
+    if (!drawing.current) return;
+    const context = event.currentTarget.getContext("2d");
+    if (!context) return;
+    const { x, y } = point(event);
+    context.lineTo(x, y);
+    context.stroke();
+  }
+
+  function finishDrawing(event: React.PointerEvent<HTMLCanvasElement>) {
+    if (!drawing.current) return;
+    drawing.current = false;
+    const output = document.createElement("canvas");
+    output.width = 600;
+    output.height = 180;
+    const context = output.getContext("2d");
+    if (!context) return;
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, output.width, output.height);
+    context.drawImage(event.currentTarget, 0, 0, output.width, output.height);
+    onChange(output.toDataURL("image/jpeg", 0.72));
+  }
+
+  return (
+    <div className={styles.signaturePadWrap}>
+      <canvas
+        ref={canvasRef}
+        className={styles.signaturePad}
+        onPointerDown={startDrawing}
+        onPointerMove={draw}
+        onPointerUp={finishDrawing}
+        onPointerCancel={finishDrawing}
+        aria-label="พื้นที่สำหรับเซ็นชื่อ"
+      />
+      <span className={styles.signatureLine}>{label}</span>
+      {value && <button type="button" className={styles.signatureClearButton} onClick={() => onChange("")}>ล้างลายเซ็น</button>}
+    </div>
+  );
+}
+
+const signatureRoles: Array<{ role: InspectionSignatureRole; label: string; required?: boolean }> = [
+  { role: "licensee", label: "ผู้รับอนุญาต / ผู้ดำเนินกิจการ", required: true },
+  { role: "duty_officer", label: "ผู้มีหน้าที่ปฏิบัติการ" },
+  { role: "assessor_1", label: "ผู้ประเมิน 1" },
+  { role: "assessor_2", label: "ผู้ประเมิน 2" },
+  { role: "witness_1", label: "พยาน 1" },
+  { role: "witness_2", label: "พยาน 2" },
+];
+
 function ReviewPanel({
   inspection,
   answers,
+  responsiblePersons,
   requiredMissing,
   unanswered,
   missingNaReasons,
   online,
   syncing,
   onSync,
+  onSaveCertification,
   onOpenSettings,
   onDeleted,
 }: {
   inspection: Inspection;
   answers: Answer[];
+  responsiblePersons: ResponsiblePerson[];
   requiredMissing: string[];
   unanswered: number;
   missingNaReasons: number;
   online: boolean;
   syncing: boolean;
   onSync: () => void;
+  onSaveCertification: (changes: Partial<Inspection>) => void;
   onOpenSettings: () => void;
   onDeleted: () => void;
 }) {
-  const ready = !requiredMissing.length && !unanswered && !missingNaReasons;
-  const perCategory = categories.map((category) => {
-    const items = answers.filter((answer) => answer.categoryCode === category.code);
-    return { ...category, complete: items.filter((answer) => answer.selectedValue !== null).length, total: items.length };
-  });
+  const signatures = inspection.signatures ?? [];
+  const licenseeSignature = signatures.find((signature) => signature.role === "licensee");
+  const certified = Boolean(licenseeSignature?.name.trim() && licenseeSignature.signature && licenseeSignature.signedAt);
+  const ready = !requiredMissing.length && !unanswered && !missingNaReasons && certified;
+  const answerByCode = new Map(answers.map((answer) => [answer.questionCode, answer]));
+  function updateSignature(role: InspectionSignatureRole, changes: Partial<InspectionSignature>) {
+    const existing = signatures.find((signature) => signature.role === role);
+    const defaults: Record<InspectionSignatureRole, string> = {
+      licensee: inspection.licenseHolderName,
+      duty_officer: "",
+      assessor_1: inspection.inspector1,
+      assessor_2: inspection.inspector2,
+      witness_1: "",
+      witness_2: "",
+    };
+    const linkedInspectorName = role === "assessor_1" ? inspection.inspector1 : role === "assessor_2" ? inspection.inspector2 : null;
+    const next: InspectionSignature = {
+      role,
+      name: linkedInspectorName ?? existing?.name ?? defaults[role] ?? "",
+      signature: existing?.signature ?? "",
+      signedAt: existing?.signedAt ?? "",
+      ...changes,
+    };
+    onSaveCertification({ signatures: [...signatures.filter((signature) => signature.role !== role), next] });
+  }
 
   async function deleteInspection() {
     await db.transaction("rw", db.inspections, db.answers, db.responsiblePersons, db.syncQueue, async () => {
@@ -877,40 +1023,114 @@ function ReviewPanel({
   }
 
   return (
-    <section>
-      <PageTitle eyebrow="ขั้นตอนสุดท้าย" title="ตรวจความครบถ้วน" description="Phase 1 ยังไม่คำนวณคะแนนหรือผลผ่าน/ไม่ผ่าน" />
-      <div className={`${styles.readinessCard} ${ready ? styles.ready : styles.notReady}`}>
-        <div className={styles.readinessIcon}>{ready ? "✓" : "!"}</div>
-        <div>
-          <h2>{ready ? "แบบตรวจพร้อมส่ง" : "ยังมีข้อมูลไม่ครบ"}</h2>
-          <p>{ready ? "ข้อมูลจะถูกส่งเป็น Revision ใหม่ไปยัง Google Sheets" : "ข้อมูลทั้งหมดบันทึกอยู่ใน iPad แล้ว คุณกลับไปกรอกต่อได้"}</p>
-        </div>
+    <section className={styles.reviewPage}>
+      <div className={styles.reviewToolbar}>
+        <span className={styles.revisionPill}>Revision {getDisplayedRevision(inspection)}</span>
+        <button type="button" className={`${styles.secondaryButton} ${styles.printButton}`} onClick={() => window.print()}>
+          พิมพ์ / บันทึก PDF
+        </button>
       </div>
+      <div className={styles.reviewPaper}>
+        <header className={styles.documentHeader}>
+          <p>บันทึกการประเมินวิธีปฏิบัติทางเภสัชกรรมชุมชน</p>
+          <h1>ในสถานที่ขายยาแผนปัจจุบัน</h1>
+          <span>ตามประกาศกระทรวงสาธารณสุข เรื่อง การกำหนดเกี่ยวกับสถานที่ อุปกรณ์<br />และวิธีปฏิบัติทางเภสัชกรรมชุมชน ในสถานที่ขายยาแผนปัจจุบัน ตามกฎหมายว่าด้วยยา พ.ศ. ๒๕๕๗</span>
+        </header>
+      <section className={styles.ownerSummaryCard}>
+        <dl className={styles.ownerDetails}>
+          <div><dt>วันที่ตรวจประเมิน</dt><dd>{formatDate(inspection.inspectionDate)}</dd></div>
+          <div><dt>เวลา</dt><dd>{inspection.startTime ? `${inspection.startTime} น.` : "—"}</dd></div>
+          <div className={styles.ownerDetailWide}><dt>ผู้ประเมิน ๑</dt><dd>{inspection.inspector1 || "—"}</dd></div>
+          <div className={styles.ownerDetailWide}><dt>ผู้ประเมิน ๒</dt><dd>{inspection.inspector2 || "—"}</dd></div>
+          <div><dt>เลขที่ใบอนุญาต</dt><dd>{inspection.licenseNumber || "—"}</dd></div>
+          <div><dt>ชื่อผู้รับอนุญาต</dt><dd>{inspection.licenseHolderName || "—"}</dd></div>
+          <div className={styles.ownerDetailWide}><dt>โดยมี</dt><dd>{inspection.operatorName || "—"}<span className={styles.ownerDetailSuffix}>เป็นผู้ดำเนินกิจการ (เฉพาะกรณีนิติบุคคล)</span></dd></div>
+          <div className={styles.ownerDetailWide}><dt>สถานประกอบการชื่อ</dt><dd>{inspection.pharmacyName || "—"}</dd></div>
+          <div className={styles.ownerDetailWide}><dt>ที่อยู่</dt><dd>{inspection.address || "—"}</dd></div>
+          <div className={`${styles.ownerDetailWide} ${styles.ownerContactRow}`}>
+            <span><dt>โทรศัพท์</dt><dd>{inspection.telephone || "—"}</dd></span>
+            <span><dt>โทรสาร</dt><dd>{inspection.fax || "—"}</dd></span>
+            <span><dt>มือถือ</dt><dd>{inspection.mobile || "—"}</dd></span>
+          </div>
+          <div className={styles.ownerDetailWide}>
+            <dt>ผู้มีหน้าที่ปฏิบัติการ {responsiblePersons.length} คน ได้แก่</dt>
+            <dd className={styles.responsibleSummary}>
+              {responsiblePersons.length ? responsiblePersons.map((person, index) => (
+                <span key={person.id}>{index + 1}. {person.name || "ยังไม่ระบุชื่อ"} {person.licenseNumber && `ภ. ${person.licenseNumber}`} · เวลาปฏิบัติการ {person.workStartTime || "—"} - {person.workEndTime || "—"} น.</span>
+              )) : "—"}
+            </dd>
+          </div>
+        </dl>
+      </section>
 
-      <div className={styles.reviewGrid}>
-        <div className={styles.formCard}>
-          <h3>ความคืบหน้ารายหมวด</h3>
-          <div className={styles.checkList}>
-            {perCategory.map((category) => (
-              <div key={category.code}>
-                <span className={category.complete === category.total ? styles.checkDone : styles.checkPending}>
-                  {category.complete === category.total ? "✓" : category.code}
-                </span>
-                <strong>{category.name}</strong>
-                <small>{category.complete}/{category.total}</small>
+      <section className={styles.surveyReviewSection}>
+        <div className={styles.surveyReviewHeading}>
+          <div><p className={styles.eyebrow}>แบบสำรวจ</p><h2>ข้อกำหนดและผลที่บันทึก</h2></div>
+          <span>{answers.length - unanswered}/{questions.length} ข้อ</span>
+        </div>
+        <div className={styles.surveyCategoryStack}>
+          {categories.map((category) => {
+            const categoryQuestions = questionsByCategory[category.code];
+            return (
+              <article className={styles.surveyCategory} key={category.code}>
+                <h3>{category.code}. {category.name}</h3>
+                <div className={styles.surveyTableScroll}>
+                  <table className={styles.surveyTable}>
+                    <thead><tr><th>ข้อกำหนดตามแบบตรวจ</th><th>ปรับปรุง<br />(0)</th><th>พอใช้<br />(1)</th><th>ดี<br />(2)</th><th>N/A</th><th>น้ำหนัก</th></tr></thead>
+                    <tbody>
+                      {categoryQuestions.map((question) => {
+                        const answer = answerByCode.get(question.code);
+                        return (
+                          <tr key={question.code}>
+                            <td><strong>{question.code}</strong><span>{question.fullText}</span>{question.critical && <b>Critical Defect</b>}{question.excludable && <b className={styles.excludableBadge}>ตัดฐานได้</b>}</td>
+                            {[0, 1, 2, "NA"].map((value) => (
+                              <td key={String(value)} className={answer?.selectedValue === value ? styles.surveySelected : undefined}>
+                                {value === "NA" && !question.excludable ? <span className={styles.notApplicableCell}>—</span> : answer?.selectedValue === value ? "✓" : ""}
+                              </td>
+                            ))}
+                            <td>{question.weight}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className={styles.certificationCard}>
+        <p className={styles.certificationStatement}>ในการตรวจครั้งนี้ ผู้ประเมินและคณะมิได้ทำให้ทรัพย์สินของผู้รับอนุญาต / ผู้ดำเนินกิจการ / ผู้มีหน้าที่ปฏิบัติการ รวมถึงผู้เกี่ยวข้อง สูญหายหรือเสียหายแต่อย่างใด ข้าพเจ้าได้อ่าน / อ่านให้ฟังแล้ว รับรองว่าถูกต้อง จึงได้ลงลายมือชื่อไว้เป็นสำคัญ</p>
+        <div className={styles.signatureGrid}>
+          {signatureRoles.map(({ role, label, required }) => {
+            const entry = signatures.find((signature) => signature.role === role);
+            const suggestedName = role === "licensee" ? inspection.licenseHolderName : role === "assessor_1" ? inspection.inspector1 : role === "assessor_2" ? inspection.inspector2 : "";
+            const linkedInspectorName = role === "assessor_1" ? inspection.inspector1 : role === "assessor_2" ? inspection.inspector2 : null;
+            return (
+              <div className={styles.signatureBlock} key={role}>
+                <div className={styles.signatureRole}><strong>{label}</strong>{required && <span>จำเป็น</span>}</div>
+                <SignaturePad
+                  value={entry?.signature ?? ""}
+                  label={`ลงชื่อ ${label}`}
+                  onChange={(signature) => updateSignature(role, { signature, signedAt: signature ? new Date().toISOString() : "" })}
+                />
+                <label className={`${styles.field} ${styles.signatureNameField}`}>
+                  <span>ชื่อ–นามสกุล {linkedInspectorName !== null && <small>จากข้อมูลแบบตรวจ</small>}</span>
+                  <input
+                    value={linkedInspectorName ?? entry?.name ?? suggestedName}
+                    placeholder={`ชื่อ${label}`}
+                    readOnly={linkedInspectorName !== null}
+                    onChange={(event) => linkedInspectorName === null && updateSignature(role, { name: event.target.value, signature: "", signedAt: "" })}
+                  />
+                </label>
+                {entry?.signedAt && <small className={styles.certifiedAt}>ลงนามเมื่อ {formatDateTime(entry.signedAt)}</small>}
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
-
-        <div className={styles.formCard}>
-          <h3>รายการที่ต้องตรวจ</h3>
-          <div className={styles.validationList}>
-            <p><span>{requiredMissing.length ? "!" : "✓"}</span> ข้อมูลหลัก {requiredMissing.length ? `ขาด ${requiredMissing.join(", ")}` : "ครบแล้ว"}</p>
-            <p><span>{unanswered ? "!" : "✓"}</span> คำตอบ {unanswered ? `ยังไม่ตอบ ${unanswered} ข้อ` : "ครบทุกข้อ"}</p>
-            <p><span>{missingNaReasons ? "!" : "✓"}</span> เหตุผล N/A {missingNaReasons ? `ยังขาด ${missingNaReasons} ข้อ` : "ครบแล้ว"}</p>
-          </div>
-        </div>
+      </section>
       </div>
 
       <div className={styles.syncCard}>
@@ -959,7 +1179,9 @@ function inspectionIsReady(inspection: Inspection, inspectionAnswers: Answer[]) 
   const naReasonsComplete = inspectionAnswers.every(
     (answer) => answer.selectedValue !== "NA" || Boolean(answer.notApplicableReason.trim()),
   );
-  return headerComplete && answersComplete && naReasonsComplete;
+  const licenseeSignature = inspection.signatures?.find((signature) => signature.role === "licensee");
+  const certified = Boolean(licenseeSignature?.name.trim() && licenseeSignature.signature && licenseeSignature.signedAt);
+  return headerComplete && answersComplete && naReasonsComplete && certified;
 }
 
 function HomeSyncDialog({
@@ -978,10 +1200,16 @@ function HomeSyncDialog({
   const allAnswers = useLiveQuery(() => db.answers.toArray(), []) ?? [];
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [pulling, setPulling] = useState(false);
+  const [pullPreview, setPullPreview] = useState<GooglePullPreview | null>(null);
   const unsynced = inspections.filter((inspection) => inspection.status !== "SYNCED");
   const ready = unsynced.filter((inspection) =>
     inspectionIsReady(inspection, allAnswers.filter((answer) => answer.inspectionId === inspection.id)),
   );
+
+  useEffect(() => {
+    if (!open) setPullPreview(null);
+  }, [open]);
 
   async function syncAllReady() {
     if (!online) {
@@ -1017,6 +1245,51 @@ function HomeSyncDialog({
       onOpenChange(false);
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function previewPull() {
+    if (!online) {
+      onNotice({ tone: "warning", text: "ยังไม่มีอินเทอร์เน็ต ไม่สามารถดึงข้อมูลจาก Google Sheets ได้" });
+      onOpenChange(false);
+      return;
+    }
+
+    const clientId = await getConfiguredGoogleClientId();
+    const spreadsheetId = (await db.settings.get("spreadsheetId"))?.value;
+    if (!clientId || !spreadsheetId) {
+      setSettingsOpen(true);
+      return;
+    }
+
+    setPulling(true);
+    try {
+      const token = await requestGoogleAccessToken(clientId);
+      setPullPreview(await previewGoogleSheetPull(spreadsheetId, token));
+    } catch (error) {
+      onNotice({ tone: "danger", text: error instanceof Error ? error.message : "ดึงข้อมูลจาก Google Sheets ไม่สำเร็จ" });
+      onOpenChange(false);
+    } finally {
+      setPulling(false);
+    }
+  }
+
+  async function confirmPull() {
+    if (!pullPreview) return;
+    setPulling(true);
+    try {
+      const result = await applyGoogleSheetPull(pullPreview);
+      onNotice({
+        tone: result.conflicts ? "warning" : "success",
+        text: `ดึงข้อมูลแล้ว: เพิ่มใหม่ ${result.added} · อัปเดต ${result.updated} · ข้ามข้อมูลขัดแย้ง ${result.conflicts}`,
+      });
+      setPullPreview(null);
+      onOpenChange(false);
+    } catch (error) {
+      onNotice({ tone: "danger", text: error instanceof Error ? error.message : "นำข้อมูลเข้า iPad ไม่สำเร็จ" });
+      onOpenChange(false);
+    } finally {
+      setPulling(false);
     }
   }
 
@@ -1060,12 +1333,55 @@ function HomeSyncDialog({
               })}
             </div>
 
-            <div className={styles.dialogActions}>
-              <button className={styles.ghostButton} onClick={() => setSettingsOpen(true)}>ตั้งค่า Google</button>
-              <Dialog.Close asChild><button className={styles.secondaryButton}>ไว้ภายหลัง</button></Dialog.Close>
-              <button className={styles.primaryButton} disabled={!ready.length || syncing} onClick={syncAllReady}>
-                {syncing ? `กำลังส่ง ${ready.length} รายการ...` : `ส่ง ${ready.length} แบบตรวจ`}
+            {pullPreview && (
+              <section className={styles.pullPreview} aria-label="สรุปข้อมูลที่จะดึงจาก Google Sheets">
+                <div className={styles.pullPreviewHeading}>
+                  <div><strong>ตรวจพบข้อมูลจาก Google Sheets</strong><span>ตรวจสอบรายการก่อนนำเข้าลง iPad</span></div>
+                  <button className={styles.iconButton} onClick={() => setPullPreview(null)} aria-label="ย้อนกลับ">←</button>
+                </div>
+                <div className={styles.homeSyncSummary}>
+                  <div><strong>{pullPreview.additions.length}</strong><span>รายการใหม่</span></div>
+                  <div><strong>{pullPreview.updates.length}</strong><span>อัปเดตได้</span></div>
+                  <div><strong>{pullPreview.conflicts.length}</strong><span>ขัดแย้ง (ไม่ทับ)</span></div>
+                </div>
+                <p>รายการขัดแย้งจะถูกเก็บไว้ใน iPad ตามเดิม ระบบจะไม่นำข้อมูลจาก Google มาทับ</p>
+              </section>
+            )}
+
+            {!pullPreview && (
+              <div className={styles.syncTransferActions}>
+                <button
+                  className={`${styles.secondaryButton} ${styles.syncTransferButton}`}
+                  onClick={previewPull}
+                  disabled={pulling || syncing}
+                >
+                  <span className={styles.syncTransferIcon}>↓</span>
+                  <span><strong>{pulling ? "กำลังตรวจข้อมูล..." : "ดึงข้อมูลลง iPad"}</strong><small>รับแบบตรวจจาก Google Sheets</small></span>
+                </button>
+                <button
+                  className={`${styles.primaryButton} ${styles.syncTransferButton}`}
+                  disabled={!ready.length || syncing || pulling}
+                  onClick={syncAllReady}
+                >
+                  <span className={styles.syncTransferIcon}>↑</span>
+                  <span><strong>{syncing ? "กำลังส่งข้อมูล..." : `ส่งขึ้น Google ${ready.length} แบบ`}</strong><small>{ready.length ? "สำรองแบบตรวจที่กรอกครบ" : "ยังไม่มีแบบตรวจที่พร้อมส่ง"}</small></span>
+                </button>
+              </div>
+            )}
+
+            {pullPreview && (
+              <button
+                className={`${styles.primaryButton} ${styles.pullConfirmButton}`}
+                onClick={confirmPull}
+                disabled={pulling || pullPreview.additions.length + pullPreview.updates.length === 0}
+              >
+                {pulling ? "กำลังนำเข้าข้อมูล..." : `ยืนยันนำเข้า ${pullPreview.additions.length + pullPreview.updates.length} รายการ`}
               </button>
+            )}
+
+            <div className={styles.syncDialogFooter}>
+              <button className={styles.ghostButton} onClick={() => setSettingsOpen(true)}>⚙ ตั้งค่า Google</button>
+              <Dialog.Close asChild><button className={styles.secondaryButton}>ปิด</button></Dialog.Close>
             </div>
           </Dialog.Content>
         </Dialog.Portal>
@@ -1127,15 +1443,25 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
     }
   }
 
-  async function chooseSpreadsheet() {
-    if (!accessToken) {
-      setError("กรุณาเลือกบัญชี Google ก่อน");
-      return;
+  async function getAccessTokenForAction() {
+    if (accessToken) return accessToken;
+
+    const clientId = await getConfiguredGoogleClientId();
+    if (!clientId) {
+      throw new Error("ระบบเชื่อมต่อ Google ยังไม่พร้อม กรุณาติดต่อผู้ดูแลระบบ");
     }
+
+    const token = await requestGoogleAccessToken(clientId);
+    setAccessToken(token);
+    return token;
+  }
+
+  async function chooseSpreadsheet() {
     setPicking(true);
     setError("");
     try {
-      const files = await listGoogleSpreadsheets(accessToken);
+      const token = await getAccessTokenForAction();
+      const files = await listGoogleSpreadsheets(token);
       setSpreadsheets(files);
       setShowSpreadsheetList(true);
     } catch (caught) {
@@ -1157,11 +1483,12 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
 
   async function createSpreadsheet() {
     const title = newSheetName.trim();
-    if (!accessToken || !title) return;
+    if (!title) return;
     setCreatingSheet(true);
     setError("");
     try {
-      const sheet = await createGoogleSpreadsheet(accessToken, title);
+      const token = await getAccessTokenForAction();
+      const sheet = await createGoogleSpreadsheet(token, title);
       await selectSpreadsheet(sheet);
       setShowCreateSheet(false);
     } catch (caught) {
@@ -1204,10 +1531,10 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                 <p>{spreadsheetName || "ยังไม่ได้เลือกไฟล์"}</p>
               </div>
               <div className={styles.googleSheetActions}>
-                <button className={styles.secondaryButton} onClick={() => setShowCreateSheet(true)} disabled={!accessToken || creatingSheet}>
+                <button className={styles.secondaryButton} onClick={() => setShowCreateSheet(true)} disabled={creatingSheet}>
                   ＋ สร้างใหม่
                 </button>
-                <button className={styles.primaryButton} onClick={chooseSpreadsheet} disabled={!accessToken || picking}>
+                <button className={styles.primaryButton} onClick={chooseSpreadsheet} disabled={picking}>
                   {picking ? "กำลังเปิดรายการ..." : spreadsheetId ? "เปลี่ยนไฟล์" : "เลือก Google Sheets"}
                 </button>
               </div>
