@@ -261,14 +261,18 @@
 .sectionHeading h2 { margin: 4px 0 0; font-size: 25px; }
 .toolbar { position: relative; display: flex; align-items: center; gap: 8px; }
 .hiddenInput { display: none; }
-.dataMenu { position: relative; }
-.dataMenu summary { display: flex; min-height: 48px; align-items: center; padding: 0 16px; gap: 8px; border: 1px solid var(--color-line); border-radius: var(--radius-sm); color: var(--color-primary-800); background: white; font-weight: 700; cursor: pointer; list-style: none; }
-.dataMenu summary::-webkit-details-marker { display: none; }
-.dataMenu[open] summary { border-color: #9fc7be; }
-.dataMenu > div { position: absolute; z-index: 20; top: calc(100% + 8px); right: 0; width: 220px; overflow: hidden; padding: 6px; border: 1px solid var(--color-line); border-radius: var(--radius-sm); background: white; box-shadow: 0 16px 40px rgb(7 59 53 / 16%); }
-.dataMenu button { width: 100%; min-height: 46px; padding: 0 12px; border: 0; border-radius: 8px; color: var(--color-ink); background: transparent; text-align: left; font-weight: 650; cursor: pointer; }
-.dataMenu button:hover { background: var(--color-primary-50); }
-.dataMenu button:disabled { color: var(--color-muted); cursor: not-allowed; opacity: .5; }
+.dataManageButton { min-height: 48px; gap: 8px; }
+.dataManageButton > span { color: var(--color-primary-700); font-size: 20px; line-height: 1; }
+.dataManagerDialog { width: min(calc(100vw - 32px), 520px); }
+.dataActionList { display: grid; margin-top: 20px; gap: 10px; }
+.dataActionButton { display: grid; width: 100%; min-height: 78px; grid-template-columns: 42px minmax(0, 1fr) 20px; align-items: center; padding: 12px 14px; gap: 12px; border: 1px solid var(--color-line); border-radius: var(--radius-sm); color: var(--color-ink); background: white; text-align: left; cursor: pointer; }
+.dataActionButton:hover { border-color: #9fc7be; background: var(--color-primary-50); }
+.dataActionButton:disabled { cursor: not-allowed; opacity: .45; }
+.dataActionIcon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 12px; color: var(--color-primary-800); background: var(--color-primary-100); font-size: 22px; font-weight: 800; }
+.dataActionButton strong,
+.dataActionButton small { display: block; }
+.dataActionButton small { margin-top: 3px; color: var(--color-muted); font-size: 13px; }
+.dataActionButton > b { color: var(--color-muted); font-size: 24px; }
 
 .inspectionList {
   overflow: hidden;

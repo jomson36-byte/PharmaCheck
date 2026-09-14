@@ -104,6 +104,7 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const [syncCenterOpen, setSyncCenterOpen] = useState(false);
+  const [dataManagerOpen, setDataManagerOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Inspection | null>(null);
   const [menuTarget, setMenuTarget] = useState<Inspection | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -163,6 +164,7 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
     URL.revokeObjectURL(url);
     await db.settings.put({ key: "lastBackupAt", value: new Date().toISOString() });
     setNotice({ tone: "success", text: "สร้างไฟล์สำรองแล้ว กรุณาเก็บไว้ใน Files หรือ iCloud Drive" });
+    setDataManagerOpen(false);
   }
 
   async function handleImport(file?: File) {
@@ -175,6 +177,7 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
       setNotice({ tone: "danger", text: error instanceof Error ? error.message : "นำเข้าไฟล์ไม่สำเร็จ" });
     } finally {
       if (fileInput.current) fileInput.current.value = "";
+      setDataManagerOpen(false);
     }
   }
 
@@ -232,13 +235,9 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
             <h2>แบบตรวจล่าสุด</h2>
           </div>
           <div className={styles.toolbar}>
-            <details className={styles.dataMenu}>
-              <summary>จัดการข้อมูล <span aria-hidden="true">⌄</span></summary>
-              <div>
-                <button onClick={handleExport} disabled={!inspections.length}>ส่งออกไฟล์สำรอง</button>
-                <button onClick={() => fileInput.current?.click()}>นำเข้าไฟล์สำรอง</button>
-              </div>
-            </details>
+            <button className={`${styles.secondaryButton} ${styles.dataManageButton}`} onClick={() => setDataManagerOpen(true)}>
+              <span aria-hidden="true">↕</span> จัดการข้อมูล
+            </button>
             <input
               ref={fileInput}
               className={styles.hiddenInput}
@@ -282,6 +281,33 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
           </div>
         )}
       </section>
+      <Dialog.Root open={dataManagerOpen} onOpenChange={setDataManagerOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className={styles.dialogOverlay} />
+          <Dialog.Content className={`${styles.dialogContent} ${styles.dataManagerDialog}`}>
+            <div className={styles.dialogHeading}>
+              <div>
+                <p className={styles.eyebrow}>ข้อมูลในอุปกรณ์</p>
+                <Dialog.Title>จัดการข้อมูล</Dialog.Title>
+              </div>
+              <Dialog.Close className={styles.iconButton} aria-label="ปิด">×</Dialog.Close>
+            </div>
+            <Dialog.Description>สำรองข้อมูลทั้งหมดหรือกู้คืนจากไฟล์ที่เคยบันทึกไว้</Dialog.Description>
+            <div className={styles.dataActionList}>
+              <button className={styles.dataActionButton} onClick={handleExport} disabled={!inspections.length}>
+                <span className={styles.dataActionIcon} aria-hidden="true">↓</span>
+                <span><strong>ส่งออกไฟล์สำรอง</strong><small>บันทึกแบบตรวจทั้งหมดเป็นไฟล์ JSON</small></span>
+                <b aria-hidden="true">›</b>
+              </button>
+              <button className={styles.dataActionButton} onClick={() => fileInput.current?.click()}>
+                <span className={styles.dataActionIcon} aria-hidden="true">↑</span>
+                <span><strong>นำเข้าไฟล์สำรอง</strong><small>กู้คืนแบบตรวจจากไฟล์ที่เคยส่งออก</small></span>
+                <b aria-hidden="true">›</b>
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
       <Dialog.Root open={Boolean(menuTarget)} onOpenChange={(open) => !open && setMenuTarget(null)}>
         <Dialog.Portal>
           <Dialog.Overlay className={styles.dialogOverlay} />
