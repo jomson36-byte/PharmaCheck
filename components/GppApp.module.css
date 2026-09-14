@@ -757,9 +757,6 @@
 .googleSheetOption small { display: block; }
 .googleSheetOption small { margin-top: 3px; color: var(--color-muted); font-size: 11px; }
 .googleSheetOption b { color: var(--color-primary-700); font-size: 12px; }
-.googleAdvancedSettings { margin-top: 16px; padding: 12px 14px; border: 1px dashed var(--color-line); border-radius: var(--radius-sm); }
-.googleAdvancedSettings summary { color: var(--color-muted); font-size: 13px; font-weight: 700; cursor: pointer; }
-.googleAdvancedSettings > button { margin-top: 14px; }
 
 .loadingScreen { display: grid; min-height: 100vh; place-items: center; color: var(--color-muted); }
 

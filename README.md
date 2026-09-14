@@ -17,7 +17,7 @@ npm run dev
 2. เปิดใช้งาน Google Sheets API และ Google Drive API
 3. สร้าง OAuth 2.0 Client ID ประเภท Web application
 4. เพิ่ม URL ของแอปใน Authorized JavaScript origins เช่น `http://localhost:3000`
-5. กำหนด `NEXT_PUBLIC_GOOGLE_CLIENT_ID` ใน `.env.local` หรือใส่ค่าผ่านเมนูสำหรับผู้ดูแลระบบ
+5. กำหนด `NEXT_PUBLIC_GOOGLE_CLIENT_ID` ใน `.env.local` ก่อน build แอป
 6. เปิดแอป ไปที่ `ตั้งค่า Google` เลือกบัญชี และเลือกไฟล์ Google Sheets จากรายการ
 
 แอปจะสร้างแท็บ `Submissions` และ Header ที่ต้องใช้ให้อัตโนมัติเมื่อส่งครั้งแรก

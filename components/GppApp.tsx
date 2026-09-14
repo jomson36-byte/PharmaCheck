@@ -33,6 +33,12 @@ const statusLabels: Record<Inspection["status"], string> = {
 
 const SWIPE_DELETE_WIDTH = 92;
 const SWIPE_OPEN_THRESHOLD = 44;
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
+
+async function getConfiguredGoogleClientId() {
+  if (GOOGLE_CLIENT_ID) return GOOGLE_CLIENT_ID;
+  return (await db.settings.get("googleClientId"))?.value ?? "";
+}
 
 function formatDate(value: string) {
   if (!value) return "ยังไม่ระบุวันที่";
@@ -482,7 +488,7 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
       setNotice({ tone: "warning", text: "กรุณาตรวจรายการที่ยังไม่ครบก่อนส่งข้อมูล" });
       return;
     }
-    const clientId = (await db.settings.get("googleClientId"))?.value;
+    const clientId = await getConfiguredGoogleClientId();
     const spreadsheetId = (await db.settings.get("spreadsheetId"))?.value;
     if (!clientId || !spreadsheetId) {
       setSettingsOpen(true);
@@ -967,7 +973,7 @@ function HomeSyncDialog({
     }
     if (!ready.length) return;
 
-    const clientId = (await db.settings.get("googleClientId"))?.value;
+    const clientId = await getConfiguredGoogleClientId();
     const spreadsheetId = (await db.settings.get("spreadsheetId"))?.value;
     if (!clientId || !spreadsheetId) {
       setSettingsOpen(true);
@@ -1052,7 +1058,6 @@ function HomeSyncDialog({
 }
 
 function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const [clientId, setClientId] = useState("");
   const [spreadsheetId, setSpreadsheetId] = useState("");
   const [spreadsheetName, setSpreadsheetName] = useState("");
   const [accountEmail, setAccountEmail] = useState("");
@@ -1066,12 +1071,10 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   useEffect(() => {
     if (!open) return;
     Promise.all([
-      db.settings.get("googleClientId"),
       db.settings.get("spreadsheetId"),
       db.settings.get("spreadsheetName"),
       db.settings.get("googleAccountEmail"),
-    ]).then(([client, sheet, sheetName, email]) => {
-      setClientId(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || client?.value || "");
+    ]).then(([sheet, sheetName, email]) => {
       setSpreadsheetId(sheet?.value ?? "");
       setSpreadsheetName(sheetName?.value ?? "");
       setAccountEmail(email?.value ?? "");
@@ -1082,20 +1085,16 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
     });
   }, [open]);
 
-  async function saveDeveloperSettings() {
-    await db.settings.put({ key: "googleClientId", value: clientId.trim() });
-  }
-
   async function chooseAccount() {
-    if (!clientId.trim()) {
-      setError("ยังไม่ได้ตั้งค่า Google OAuth Client ID");
+    const clientId = await getConfiguredGoogleClientId();
+    if (!clientId) {
+      setError("ระบบเชื่อมต่อ Google ยังไม่พร้อม กรุณาติดต่อผู้ดูแลระบบ");
       return;
     }
     setConnecting(true);
     setError("");
     try {
-      await saveDeveloperSettings();
-      const account = await connectGoogleAccount(clientId.trim());
+      const account = await connectGoogleAccount(clientId);
       setAccessToken(account.accessToken);
       setAccountEmail(account.email);
       await db.settings.put({ key: "googleAccountEmail", value: account.email });
@@ -1200,14 +1199,6 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
           )}
           {error && <p className={styles.googleSetupError}>{error}</p>}
 
-          <details className={styles.googleAdvancedSettings}>
-            <summary>การตั้งค่าสำหรับผู้ดูแลระบบ</summary>
-            <label className={styles.field}>
-              <span>Google OAuth Client ID</span>
-              <input value={clientId} onChange={(event) => setClientId(event.target.value)} placeholder="...apps.googleusercontent.com" />
-            </label>
-            <button className={styles.secondaryButton} onClick={saveDeveloperSettings}>บันทึกค่าระบบ</button>
-          </details>
           <div className={styles.dialogActions}>
             <Dialog.Close asChild><button className={styles.primaryButton} disabled={!spreadsheetId}>เสร็จสิ้น</button></Dialog.Close>
           </div>
