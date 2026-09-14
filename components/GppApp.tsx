@@ -91,10 +91,15 @@ function AppHeader({ online }: { online: boolean }) {
 function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) => void }) {
   const inspections = useLiveQuery(() => db.inspections.orderBy("updatedAt").reverse().toArray(), []) ?? [];
   const unsyncedCount = inspections.filter((inspection) => inspection.status !== "SYNCED").length;
+  const latestSyncAt = inspections.reduce<string | undefined>((latest, inspection) => {
+    if (!inspection.lastSyncedAt) return latest;
+    return !latest || inspection.lastSyncedAt > latest ? inspection.lastSyncedAt : latest;
+  }, undefined);
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const [syncCenterOpen, setSyncCenterOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Inspection | null>(null);
+  const [menuTarget, setMenuTarget] = useState<Inspection | null>(null);
   const [swipeOffsets, setSwipeOffsets] = useState<Record<string, number>>({});
   const [deleting, setDeleting] = useState(false);
   const [draggingRowId, setDraggingRowId] = useState<string | null>(null);
@@ -273,13 +278,14 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
           <span>แบบตรวจในเครื่อง</span>
           <strong>{inspections.length}</strong>
         </div>
-        <div className={styles.metricCard}>
+        <button className={`${styles.metricCard} ${styles.metricButton}`} onClick={() => setSyncCenterOpen(true)}>
           <span>รายการรอส่ง</span>
           <strong className={unsyncedCount ? styles.warningText : undefined}>{unsyncedCount}</strong>
-        </div>
+          <small>แตะเพื่อดูรายการ <b aria-hidden="true">›</b></small>
+        </button>
         <div className={styles.metricCard}>
-          <span>การเชื่อมต่อ</span>
-          <strong className={online ? styles.successText : styles.warningText}>{online ? "พร้อมส่ง" : "บันทึกในเครื่อง"}</strong>
+          <span>ส่ง Google ล่าสุด</span>
+          <strong className={latestSyncAt ? styles.metricDate : styles.metricEmpty}>{latestSyncAt ? formatDateTime(latestSyncAt) : "ยังไม่เคยส่ง"}</strong>
         </div>
       </section>
 
@@ -287,11 +293,16 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
         <div className={styles.sectionHeading}>
           <div>
             <p className={styles.eyebrow}>ล่าสุด</p>
-            <h2>แบบตรวจใน iPad</h2>
+            <h2>แบบตรวจล่าสุด</h2>
           </div>
           <div className={styles.toolbar}>
-            <button className={styles.secondaryButton} onClick={handleExport} disabled={!inspections.length}>ส่งออกไฟล์สำรอง</button>
-            <button className={styles.ghostButton} onClick={() => fileInput.current?.click()}>นำเข้า</button>
+            <details className={styles.dataMenu}>
+              <summary>จัดการข้อมูล <span aria-hidden="true">⌄</span></summary>
+              <div>
+                <button onClick={handleExport} disabled={!inspections.length}>ส่งออกไฟล์สำรอง</button>
+                <button onClick={() => fileInput.current?.click()}>นำเข้าไฟล์สำรอง</button>
+              </div>
+            </details>
             <input
               ref={fileInput}
               className={styles.hiddenInput}
@@ -350,13 +361,45 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
                     <span>{inspection.licenseNumber || "ยังไม่ระบุเลขใบอนุญาต"} · {formatDate(inspection.inspectionDate)}</span>
                   </span>
                   <span className={`${styles.statusPill} ${styles[`status_${inspection.status}`]}`}>{statusLabels[inspection.status]}</span>
-                  <span className={styles.chevron}>›</span>
                 </button>
+                <button
+                  type="button"
+                  className={styles.inspectionMoreButton}
+                  aria-label={`จัดการ ${inspection.pharmacyName || "แบบตรวจใหม่"}`}
+                  onClick={() => setMenuTarget(inspection)}
+                >•••</button>
               </div>
             ))}
           </div>
         )}
       </section>
+      <Dialog.Root open={Boolean(menuTarget)} onOpenChange={(open) => !open && setMenuTarget(null)}>
+        <Dialog.Portal>
+          <Dialog.Overlay className={styles.dialogOverlay} />
+          <Dialog.Content className={`${styles.dialogContent} ${styles.inspectionMenuDialog}`}>
+            <div className={styles.dialogHeading}>
+              <div>
+                <p className={styles.eyebrow}>จัดการแบบตรวจ</p>
+                <Dialog.Title>{menuTarget?.pharmacyName || "แบบตรวจใหม่"}</Dialog.Title>
+              </div>
+              <Dialog.Close className={styles.iconButton} aria-label="ปิด">×</Dialog.Close>
+            </div>
+            <div className={styles.inspectionMenuActions}>
+              <button className={styles.primaryButton} onClick={() => {
+                if (!menuTarget) return;
+                const target = menuTarget;
+                setMenuTarget(null);
+                onOpen(target.id);
+              }}>เปิดแบบตรวจ</button>
+              <button className={styles.dangerOutlineButton} onClick={() => {
+                if (!menuTarget) return;
+                setDeleteTarget(menuTarget);
+                setMenuTarget(null);
+              }}>ลบแบบตรวจ</button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
       <AlertDialog.Root open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialog.Portal>
           <AlertDialog.Overlay className={styles.dialogOverlay} />

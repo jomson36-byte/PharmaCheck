@@ -76,9 +76,9 @@
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: end;
-  gap: 32px;
-  margin: 34px 0 30px;
-  padding: clamp(28px, 5vw, 54px);
+  gap: 26px;
+  margin: 20px 0 22px;
+  padding: clamp(26px, 4vw, 42px);
   overflow: hidden;
   border-radius: var(--radius-lg);
   color: white;
@@ -91,7 +91,7 @@
 .hero h1 {
   max-width: 720px;
   margin: 6px 0 12px;
-  font-size: clamp(32px, 5vw, 56px);
+  font-size: clamp(32px, 4.4vw, 50px);
   line-height: 1.14;
   letter-spacing: -.035em;
 }
@@ -212,15 +212,18 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
-  margin-bottom: 42px;
+  margin-bottom: 30px;
 }
 
 .metricCard {
+  display: block;
+  width: 100%;
   padding: 22px 24px;
   border: 1px solid var(--color-line);
   border-radius: var(--radius-md);
   background: rgb(255 255 255 / 82%);
   box-shadow: var(--shadow-card);
+  text-align: left;
 }
 
 .metricCard span,
@@ -229,6 +232,13 @@
 .metricCard strong { margin-top: 7px; font-size: 26px; color: var(--color-primary-900); }
 .metricCard .successText { color: var(--color-success); font-size: 20px; }
 .metricCard .warningText { color: var(--color-warning); }
+.metricCard .metricDate { font-size: 16px; line-height: 1.4; }
+.metricCard .metricEmpty { color: var(--color-muted); font-size: 17px; }
+.metricButton { position: relative; font: inherit; cursor: pointer; transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease; }
+.metricButton:hover { border-color: #9fc7be; box-shadow: 0 10px 28px rgb(7 59 53 / 10%); }
+.metricButton:active { transform: scale(.985); }
+.metricButton small { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; color: var(--color-primary-700); font-size: 12px; font-weight: 700; }
+.metricButton small b { font-size: 20px; line-height: 1; }
 
 .contentSection { margin-top: 14px; }
 
@@ -243,8 +253,16 @@
 
 .sectionHeading { margin-bottom: 16px; }
 .sectionHeading h2 { margin: 4px 0 0; font-size: 25px; }
-.toolbar { display: flex; align-items: center; gap: 8px; }
+.toolbar { position: relative; display: flex; align-items: center; gap: 8px; }
 .hiddenInput { display: none; }
+.dataMenu { position: relative; }
+.dataMenu summary { display: flex; min-height: 48px; align-items: center; padding: 0 16px; gap: 8px; border: 1px solid var(--color-line); border-radius: var(--radius-sm); color: var(--color-primary-800); background: white; font-weight: 700; cursor: pointer; list-style: none; }
+.dataMenu summary::-webkit-details-marker { display: none; }
+.dataMenu[open] summary { border-color: #9fc7be; }
+.dataMenu > div { position: absolute; z-index: 20; top: calc(100% + 8px); right: 0; width: 220px; overflow: hidden; padding: 6px; border: 1px solid var(--color-line); border-radius: var(--radius-sm); background: white; box-shadow: 0 16px 40px rgb(7 59 53 / 16%); }
+.dataMenu button { width: 100%; min-height: 46px; padding: 0 12px; border: 0; border-radius: 8px; color: var(--color-ink); background: transparent; text-align: left; font-weight: 650; cursor: pointer; }
+.dataMenu button:hover { background: var(--color-primary-50); }
+.dataMenu button:disabled { color: var(--color-muted); cursor: not-allowed; opacity: .5; }
 
 .inspectionList {
   overflow: hidden;
@@ -286,9 +304,9 @@
   display: grid;
   width: 100%;
   min-height: 86px;
-  grid-template-columns: 48px minmax(0, 1fr) auto 20px;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
   align-items: center;
-  padding: 14px 18px;
+  padding: 14px 70px 14px 18px;
   gap: 14px;
   border: 0;
   border-bottom: 1px solid var(--color-line);
@@ -319,8 +337,10 @@
 .inspectionMain strong,
 .inspectionMain span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inspectionMain strong { font-size: 17px; }
-.inspectionMain span { margin-top: 4px; color: var(--color-muted); font-size: 13px; }
+.inspectionMain span { margin-top: 4px; color: var(--color-muted); font-size: 14px; }
 .chevron { color: #91a09d; font-size: 28px; }
+.inspectionMoreButton { position: absolute; z-index: 3; top: 50%; right: 12px; width: 44px; min-height: 44px; transform: translateY(-50%); border: 0; border-radius: 12px; color: var(--color-muted); background: transparent; font-size: 16px; font-weight: 800; letter-spacing: 2px; cursor: pointer; }
+.inspectionMoreButton:hover { color: var(--color-primary-800); background: var(--color-primary-50); }
 
 .statusPill,
 .criticalTag,
@@ -695,6 +715,9 @@
 
 .deleteButton { display: block; margin: 32px auto 0; padding: 0 20px; color: var(--color-danger); background: transparent; }
 .dangerButton { padding: 0 20px; color: white; background: var(--color-danger); }
+.dangerOutlineButton { min-height: var(--touch-target); padding: 0 20px; border: 1px solid #efb5b0; border-radius: var(--radius-sm); color: var(--color-danger); background: white; font-weight: 700; cursor: pointer; }
+.inspectionMenuDialog { width: min(calc(100vw - 32px), 420px); }
+.inspectionMenuActions { display: grid; margin-top: 22px; gap: 10px; }
 
 .dialogOverlay {
   position: fixed;
@@ -796,9 +819,8 @@
   .syncCard { align-items: stretch; flex-direction: column; }
   .syncActions button { flex: 1; }
   .homeSyncSummary { grid-template-columns: repeat(3, 1fr); }
-  .inspectionRow { grid-template-columns: 48px minmax(0, 1fr) 20px; }
+  .inspectionRow { grid-template-columns: 48px minmax(0, 1fr); }
   .inspectionRow .statusPill { grid-column: 2; justify-self: start; }
-  .inspectionRow .chevron { grid-column: 3; grid-row: 1 / span 2; }
 }
 
 @media (max-width: 520px) {
