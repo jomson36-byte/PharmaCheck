@@ -10,11 +10,12 @@ import { useEffect, useRef, useState } from "react";
 import { createInspection, db, exportBackup, importBackup } from "@/lib/db";
 import {
   connectGoogleAccount,
-  pickGoogleSpreadsheet,
+  listGoogleSpreadsheets,
   prepareInspectionForSync,
   requestGoogleAccessToken,
   syncQueueItem,
 } from "@/lib/googleSheets";
+import type { GoogleSpreadsheet } from "@/lib/googleSheets";
 import type { Answer, AnswerValue, BackupFile, Inspection, ResponsiblePerson } from "@/lib/models";
 import { categories, questions, questionsByCategory, type Question } from "@/lib/questions";
 import styles from "./GppApp.module.css";
@@ -1052,12 +1053,12 @@ function HomeSyncDialog({
 
 function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [clientId, setClientId] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [appId, setAppId] = useState("");
   const [spreadsheetId, setSpreadsheetId] = useState("");
   const [spreadsheetName, setSpreadsheetName] = useState("");
   const [accountEmail, setAccountEmail] = useState("");
   const [accessToken, setAccessToken] = useState("");
+  const [spreadsheets, setSpreadsheets] = useState<GoogleSpreadsheet[]>([]);
+  const [showSpreadsheetList, setShowSpreadsheetList] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState("");
@@ -1066,29 +1067,23 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
     if (!open) return;
     Promise.all([
       db.settings.get("googleClientId"),
-      db.settings.get("googleApiKey"),
-      db.settings.get("googleAppId"),
       db.settings.get("spreadsheetId"),
       db.settings.get("spreadsheetName"),
       db.settings.get("googleAccountEmail"),
-    ]).then(([client, key, app, sheet, sheetName, email]) => {
+    ]).then(([client, sheet, sheetName, email]) => {
       setClientId(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || client?.value || "");
-      setApiKey(process.env.NEXT_PUBLIC_GOOGLE_API_KEY || key?.value || "");
-      setAppId(process.env.NEXT_PUBLIC_GOOGLE_APP_ID || app?.value || "");
       setSpreadsheetId(sheet?.value ?? "");
       setSpreadsheetName(sheetName?.value ?? "");
       setAccountEmail(email?.value ?? "");
       setAccessToken("");
+      setSpreadsheets([]);
+      setShowSpreadsheetList(false);
       setError("");
     });
   }, [open]);
 
   async function saveDeveloperSettings() {
-    await db.settings.bulkPut([
-      { key: "googleClientId", value: clientId.trim() },
-      { key: "googleApiKey", value: apiKey.trim() },
-      { key: "googleAppId", value: appId.trim() },
-    ]);
+    await db.settings.put({ key: "googleClientId", value: clientId.trim() });
   }
 
   async function chooseAccount() {
@@ -1116,27 +1111,27 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       setError("กรุณาเลือกบัญชี Google ก่อน");
       return;
     }
-    if (!apiKey.trim() || !appId.trim()) {
-      setError("ยังไม่ได้ตั้งค่า Google API Key หรือ Project number");
-      return;
-    }
     setPicking(true);
     setError("");
     try {
-      await saveDeveloperSettings();
-      const sheet = await pickGoogleSpreadsheet({ accessToken, apiKey: apiKey.trim(), appId: appId.trim() });
-      if (!sheet) return;
-      setSpreadsheetId(sheet.id);
-      setSpreadsheetName(sheet.name);
-      await db.settings.bulkPut([
-        { key: "spreadsheetId", value: sheet.id },
-        { key: "spreadsheetName", value: sheet.name },
-      ]);
+      const files = await listGoogleSpreadsheets(accessToken);
+      setSpreadsheets(files);
+      setShowSpreadsheetList(true);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "เปิดรายการ Google Sheets ไม่สำเร็จ");
+      setError(caught instanceof Error ? caught.message : "อ่านรายการ Google Sheets ไม่สำเร็จ");
     } finally {
       setPicking(false);
     }
+  }
+
+  async function selectSpreadsheet(sheet: GoogleSpreadsheet) {
+    setSpreadsheetId(sheet.id);
+    setSpreadsheetName(sheet.name);
+    setShowSpreadsheetList(false);
+    await db.settings.bulkPut([
+      { key: "spreadsheetId", value: sheet.id },
+      { key: "spreadsheetName", value: sheet.name },
+    ]);
   }
 
   return (
@@ -1177,6 +1172,26 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
             </section>
           </div>
 
+          {showSpreadsheetList && (
+            <div className={styles.googleSheetList}>
+              <div className={styles.googleSheetListHeading}>
+                <strong>Google Sheets ของ {accountEmail}</strong>
+                <button className={styles.iconButton} onClick={() => setShowSpreadsheetList(false)} aria-label="ปิดรายการ">×</button>
+              </div>
+              {!spreadsheets.length && <p className={styles.mutedMessage}>ไม่พบไฟล์ Google Sheets ในบัญชีนี้</p>}
+              {spreadsheets.map((sheet) => (
+                <button key={sheet.id} className={styles.googleSheetOption} onClick={() => selectSpreadsheet(sheet)}>
+                  <span aria-hidden="true">▦</span>
+                  <span>
+                    <strong>{sheet.name}</strong>
+                    <small>{sheet.modifiedTime ? `แก้ไขล่าสุด ${formatDateTime(sheet.modifiedTime)}` : "Google Sheets"}</small>
+                  </span>
+                  <b>{sheet.id === spreadsheetId ? "เลือกอยู่ ✓" : "เลือก"}</b>
+                </button>
+              ))}
+            </div>
+          )}
+
           {spreadsheetId && (
             <div className={styles.googleConnectedStatus}>
               <span>✓</span>
@@ -1190,14 +1205,6 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
             <label className={styles.field}>
               <span>Google OAuth Client ID</span>
               <input value={clientId} onChange={(event) => setClientId(event.target.value)} placeholder="...apps.googleusercontent.com" />
-            </label>
-            <label className={styles.field}>
-              <span>Google API Key</span>
-              <input value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="AIza..." />
-            </label>
-            <label className={styles.field}>
-              <span>Google Cloud Project number</span>
-              <input value={appId} onChange={(event) => setAppId(event.target.value)} inputMode="numeric" placeholder="123456789012" />
             </label>
             <button className={styles.secondaryButton} onClick={saveDeveloperSettings}>บันทึกค่าระบบ</button>
           </details>

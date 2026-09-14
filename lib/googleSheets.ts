@@ -8,13 +8,18 @@ const GOOGLE_SCOPES = [
   "email",
   "profile",
   "https://www.googleapis.com/auth/spreadsheets",
-  "https://www.googleapis.com/auth/drive.file",
+  "https://www.googleapis.com/auth/drive.metadata.readonly",
 ].join(" ");
 
 type TokenResponse = { access_token?: string; expires_in?: number; error?: string; error_description?: string };
 type TokenClient = { requestAccessToken: (options?: { prompt?: string }) => void };
-type PickerDocument = { id: string; name: string; url?: string };
-type PickerResponse = { action?: string; docs?: PickerDocument[] };
+
+export type GoogleSpreadsheet = {
+  id: string;
+  name: string;
+  modifiedTime?: string;
+  webViewLink?: string;
+};
 
 let cachedToken: { clientId: string; accessToken: string; expiresAt: number } | null = null;
 
@@ -32,26 +37,7 @@ declare global {
           revoke: (token: string, callback?: () => void) => void;
         };
       };
-      picker?: {
-        Action: { PICKED: string; CANCEL: string };
-        DocsViewMode: { LIST: string };
-        ViewId: { SPREADSHEETS: string };
-        DocsView: new (viewId: string) => {
-          setIncludeFolders: (include: boolean) => unknown;
-          setMode: (mode: string) => unknown;
-        };
-        PickerBuilder: new () => {
-          setOAuthToken: (token: string) => unknown;
-          setDeveloperKey: (key: string) => unknown;
-          setAppId: (appId: string) => unknown;
-          setOrigin: (origin: string) => unknown;
-          addView: (view: unknown) => unknown;
-          setCallback: (callback: (data: PickerResponse) => void) => unknown;
-          build: () => { setVisible: (visible: boolean) => void };
-        };
-      };
     };
-    gapi?: { load: (api: string, options: { callback: () => void; onerror: () => void }) => void };
   }
 }
 
@@ -215,71 +201,22 @@ export async function connectGoogleAccount(clientId: string) {
   return { accessToken, email: profile.email ?? "บัญชี Google", name: profile.name, picture: profile.picture };
 }
 
-export function loadGooglePicker() {
-  if (window.google?.picker && window.gapi) return Promise.resolve();
-  return new Promise<void>((resolve, reject) => {
-    const loadPickerApi = () => {
-      if (!window.gapi) {
-        reject(new Error("โหลด Google Picker ไม่สำเร็จ"));
-        return;
-      }
-      window.gapi.load("picker", {
-        callback: resolve,
-        onerror: () => reject(new Error("โหลด Google Picker ไม่สำเร็จ")),
-      });
-    };
-    const existing = document.querySelector<HTMLScriptElement>('script[src="https://apis.google.com/js/api.js"]');
-    if (existing) {
-      if (window.gapi) loadPickerApi();
-      else {
-        existing.addEventListener("load", loadPickerApi, { once: true });
-        existing.addEventListener("error", () => reject(new Error("โหลด Google Picker ไม่สำเร็จ")), { once: true });
-      }
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = "https://apis.google.com/js/api.js";
-    script.async = true;
-    script.defer = true;
-    script.onload = loadPickerApi;
-    script.onerror = () => reject(new Error("โหลด Google Picker ไม่สำเร็จ"));
-    document.head.appendChild(script);
+export async function listGoogleSpreadsheets(accessToken: string) {
+  const params = new URLSearchParams({
+    q: "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false",
+    orderBy: "modifiedTime desc",
+    pageSize: "100",
+    fields: "files(id,name,modifiedTime,webViewLink)",
   });
-}
-
-export async function pickGoogleSpreadsheet({
-  accessToken,
-  apiKey,
-  appId,
-}: {
-  accessToken: string;
-  apiKey: string;
-  appId: string;
-}) {
-  await loadGooglePicker();
-  if (!window.google?.picker) throw new Error("Google Picker ยังไม่พร้อมใช้งาน");
-
-  return new Promise<PickerDocument | null>((resolve, reject) => {
-    try {
-      const pickerApi = window.google!.picker!;
-      const view = new pickerApi.DocsView(pickerApi.ViewId.SPREADSHEETS);
-      view.setIncludeFolders(false);
-      view.setMode(pickerApi.DocsViewMode.LIST);
-      const builder = new pickerApi.PickerBuilder();
-      builder.setOAuthToken(accessToken);
-      builder.setDeveloperKey(apiKey);
-      builder.setAppId(appId);
-      builder.setOrigin(window.location.origin);
-      builder.addView(view);
-      builder.setCallback((data) => {
-        if (data.action === pickerApi.Action.PICKED && data.docs?.[0]) resolve(data.docs[0]);
-        else if (data.action === pickerApi.Action.CANCEL) resolve(null);
-      });
-      builder.build().setVisible(true);
-    } catch (error) {
-      reject(error);
-    }
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
   });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body?.error?.message || "อ่านรายการ Google Sheets ไม่สำเร็จ");
+  }
+  const data = await response.json() as { files?: GoogleSpreadsheet[] };
+  return data.files ?? [];
 }
 
 async function sheetsFetch<T>(url: string, token: string, init?: RequestInit): Promise<T> {

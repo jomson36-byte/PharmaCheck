@@ -747,6 +747,16 @@
 .googleConnectedStatus small { display: block; }
 .googleConnectedStatus small { margin-top: 2px; color: #35695a; }
 .googleSetupError { margin-top: 12px; padding: 12px 14px; border-radius: 10px; color: var(--color-danger) !important; background: var(--color-danger-soft); font-size: 13px; }
+.googleSheetList { max-height: 330px; overflow: auto; margin-top: 14px; border: 1px solid var(--color-line); border-radius: var(--radius-sm); background: white; }
+.googleSheetListHeading { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--color-line); background: white; }
+.googleSheetOption { display: grid; width: 100%; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; padding: 13px 14px; gap: 10px; border: 0; border-bottom: 1px solid var(--color-line); color: var(--color-ink); background: white; text-align: left; cursor: pointer; }
+.googleSheetOption:last-child { border-bottom: 0; }
+.googleSheetOption:hover { background: var(--color-primary-50); }
+.googleSheetOption > span:first-child { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 7px; color: white; background: #0f9d58; font-size: 18px; }
+.googleSheetOption strong,
+.googleSheetOption small { display: block; }
+.googleSheetOption small { margin-top: 3px; color: var(--color-muted); font-size: 11px; }
+.googleSheetOption b { color: var(--color-primary-700); font-size: 12px; }
 .googleAdvancedSettings { margin-top: 16px; padding: 12px 14px; border: 1px dashed var(--color-line); border-radius: var(--radius-sm); }
 .googleAdvancedSettings summary { color: var(--color-muted); font-size: 13px; font-weight: 700; cursor: pointer; }
 .googleAdvancedSettings > button { margin-top: 14px; }
