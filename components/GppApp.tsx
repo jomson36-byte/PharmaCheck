@@ -32,8 +32,6 @@ const statusLabels: Record<Inspection["status"], string> = {
   SYNC_ERROR: "ส่งไม่สำเร็จ",
 };
 
-const SWIPE_DELETE_WIDTH = 92;
-const SWIPE_OPEN_THRESHOLD = 44;
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 
 async function getConfiguredGoogleClientId() {
@@ -100,10 +98,7 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
   const [syncCenterOpen, setSyncCenterOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Inspection | null>(null);
   const [menuTarget, setMenuTarget] = useState<Inspection | null>(null);
-  const [swipeOffsets, setSwipeOffsets] = useState<Record<string, number>>({});
   const [deleting, setDeleting] = useState(false);
-  const [draggingRowId, setDraggingRowId] = useState<string | null>(null);
-  const swipeStart = useRef<{ id: string; x: number; y: number; base: number; decided: boolean } | null>(null);
   const touchCreateLock = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -146,74 +141,7 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
     } finally {
       setDeleteTarget(null);
       setDeleting(false);
-      setSwipeOffsets({});
     }
-  }
-
-  function beginSwipe(id: string, eventX: number, eventY: number) {
-    const baseOffset = swipeOffsets[id] ?? 0;
-    swipeStart.current = { id, x: eventX, y: eventY, base: baseOffset, decided: false };
-    setDraggingRowId(id);
-    setSwipeOffsets((prev) => {
-      const next: Record<string, number> = {};
-      Object.keys(prev).forEach((currentId) => {
-        if (currentId === id) return;
-        next[currentId] = 0;
-      });
-      next[id] = baseOffset;
-      return next;
-    });
-  }
-
-  function updateSwipe(id: string, eventX: number, eventY: number) {
-    if (!swipeStart.current || swipeStart.current.id !== id) return;
-    const deltaX = swipeStart.current.x - eventX;
-    const deltaY = eventY - swipeStart.current.y;
-
-    if (!swipeStart.current.decided) {
-      if (Math.abs(deltaX) < 6 && Math.abs(deltaY) < 6) return;
-      if (Math.abs(deltaY) > Math.abs(deltaX) + 8) {
-        swipeStart.current = null;
-        setDraggingRowId(null);
-        return;
-      }
-      swipeStart.current.decided = true;
-    }
-
-    if (swipeStart.current.base === 0 && deltaX < 0) return;
-    const nextOffset = Math.max(0, Math.min(SWIPE_DELETE_WIDTH, swipeStart.current.base + deltaX));
-    setSwipeOffsets((prev) => {
-      if ((prev[id] ?? 0) === nextOffset) return prev;
-      return { ...prev, [id]: nextOffset };
-    });
-  }
-
-  function endSwipe(id: string) {
-    if (!swipeStart.current || swipeStart.current.id !== id) return;
-    setSwipeOffsets((prev) => {
-      const currentOffset = prev[id] ?? 0;
-      const next: Record<string, number> = {};
-      Object.keys(prev).forEach((currentId) => {
-        if (currentId === id) return;
-        next[currentId] = 0;
-      });
-      next[id] = currentOffset >= SWIPE_OPEN_THRESHOLD ? SWIPE_DELETE_WIDTH : 0;
-      return next;
-    });
-    swipeStart.current = null;
-    setDraggingRowId(null);
-  }
-
-  function cancelSwipe() {
-    swipeStart.current = null;
-    setDraggingRowId(null);
-    setSwipeOffsets((prev) => {
-      const next: Record<string, number> = {};
-      Object.keys(prev).forEach((id) => {
-        next[id] = 0;
-      });
-      return next;
-    });
   }
 
   async function handleExport() {
@@ -322,38 +250,11 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
         ) : (
           <div className={styles.inspectionList}>
             {inspections.map((inspection) => (
-              <div key={inspection.id} className={styles.inspectionSwipeRow}>
-                <div className={styles.inspectionSwipeAction}>
-                  <button
-                    type="button"
-                    className={styles.inspectionDeleteButton}
-                    onClick={() => setDeleteTarget(inspection)}
-                  >
-                    ลบ
-                  </button>
-                </div>
+              <div key={inspection.id} className={styles.inspectionListRow}>
                 <button
                   type="button"
                   className={styles.inspectionRow}
-                  onClick={() => {
-                    if (swipeOffsets[inspection.id]) {
-                      setSwipeOffsets((prev) => ({ ...prev, [inspection.id]: 0 }));
-                      return;
-                    }
-                    onOpen(inspection.id);
-                  }}
-                  onTouchStart={(event) => {
-                    beginSwipe(inspection.id, event.touches[0].clientX, event.touches[0].clientY);
-                  }}
-                  onTouchMove={(event) => {
-                    updateSwipe(inspection.id, event.touches[0].clientX, event.touches[0].clientY);
-                  }}
-                  onTouchEnd={() => endSwipe(inspection.id)}
-                  onTouchCancel={cancelSwipe}
-                  style={{
-                    transform: `translateX(-${swipeOffsets[inspection.id] ?? 0}px)`,
-                    transition: draggingRowId === inspection.id ? "none" : "transform 190ms ease",
-                  }}
+                  onClick={() => onOpen(inspection.id)}
                 >
                   <span className={styles.inspectionIcon}>{inspection.pharmacyName?.slice(0, 1) || "ร"}</span>
                   <span className={styles.inspectionMain}>
