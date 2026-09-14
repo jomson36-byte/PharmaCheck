@@ -386,11 +386,39 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
   const [notice, setNotice] = useState<Notice>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const editorTopRef = useRef<HTMLDivElement>(null);
 
   const answered = answers.filter((answer) => answer.selectedValue !== null).length;
   const progress = Math.round((answered / questions.length) * 100);
   const tabOrder = ["info", ...categories.map((category) => category.code), "review"];
   const currentIndex = tabOrder.indexOf(activeTab);
+
+  function scrollToEditorTop() {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => editorTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    });
+  }
+
+  function handleNextStep() {
+    if (categories.some((category) => category.code === activeTab)) {
+      const firstIncomplete = questionsByCategory[activeTab].find((question) => {
+        const answer = answers.find((item) => item.questionCode === question.code);
+        return !answer || answer.selectedValue === null || (answer.selectedValue === "NA" && !answer.notApplicableReason.trim());
+      });
+      if (firstIncomplete) {
+        const card = document.querySelector<HTMLElement>(`[data-question-code="${firstIncomplete.code}"]`);
+        card?.scrollIntoView({ behavior: "smooth", block: "center" });
+        window.setTimeout(() => card?.querySelector<HTMLElement>('[role="radio"]')?.focus({ preventScroll: true }), 450);
+        setNotice({ tone: "warning", text: `กรุณาเลือกคำตอบข้อ ${firstIncomplete.code} ก่อนดำเนินการต่อ` });
+        return;
+      }
+    }
+
+    const nextTab = tabOrder[Math.min(tabOrder.length - 1, currentIndex + 1)];
+    setActiveTab(nextTab);
+    setNotice(null);
+    scrollToEditorTop();
+  }
 
   if (inspection === undefined) {
     return <main className={styles.loadingScreen}>กำลังเปิดแบบตรวจ...</main>;
@@ -506,7 +534,7 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
         </div>
       </header>
 
-      <div className={styles.progressWrap}>
+      <div className={styles.progressWrap} ref={editorTopRef}>
         <Progress.Root className={styles.progressRoot} value={progress}>
           <Progress.Indicator className={styles.progressIndicator} style={{ transform: `translateX(-${100 - progress}%)` }} />
         </Progress.Root>
@@ -522,7 +550,9 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
           </Tabs.Trigger>
           {categories.map((category) => {
             const categoryAnswers = answers.filter((answer) => answer.categoryCode === category.code);
-            const complete = categoryAnswers.length > 0 && categoryAnswers.every((answer) => answer.selectedValue !== null);
+            const complete = categoryAnswers.length > 0 && categoryAnswers.every((answer) =>
+              answer.selectedValue !== null && (answer.selectedValue !== "NA" || answer.notApplicableReason.trim()),
+            );
             return (
               <Tabs.Trigger className={styles.tabTrigger} value={category.code} key={category.code} aria-label={category.name} title={category.name}>
                 <span className={styles.tabNumber}>{complete ? "✓" : category.code}</span><span className={styles.tabLabel}>{tabLabels[category.code]}</span>
@@ -583,7 +613,7 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
         <button
           className={styles.primaryButton}
           disabled={currentIndex === tabOrder.length - 1}
-          onClick={() => setActiveTab(tabOrder[Math.min(tabOrder.length - 1, currentIndex + 1)])}
+          onClick={handleNextStep}
         >
           ถัดไป →
         </button>
@@ -745,7 +775,10 @@ function QuestionCard({ question, answer, onSave }: { question: Question; answer
   ];
 
   return (
-    <article className={`${styles.questionCard} ${answer.selectedValue !== null ? styles.questionAnswered : ""}`}>
+    <article
+      className={`${styles.questionCard} ${answer.selectedValue !== null ? styles.questionAnswered : ""}`}
+      data-question-code={question.code}
+    >
       <div className={styles.questionTopline}>
         <span className={styles.questionCode}>ข้อ {question.code}</span>
         <div className={styles.tagRow}>
