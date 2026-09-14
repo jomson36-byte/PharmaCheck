@@ -442,35 +442,36 @@
 .editorTabs { min-width: 0; }
 
 .tabList {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   padding: 6px;
   gap: 5px;
-  overflow-x: auto;
+  overflow: hidden;
   border: 1px solid var(--color-line);
   border-radius: 16px;
   background: rgb(255 255 255 / 85%);
   scrollbar-width: none;
 }
 
-.tabList::-webkit-scrollbar { display: none; }
-
 .tabTrigger {
   display: flex;
-  min-width: max-content;
-  min-height: 50px;
+  min-width: 0;
+  min-height: 64px;
+  flex-direction: column;
   align-items: center;
-  padding: 0 14px;
-  gap: 7px;
+  justify-content: center;
+  padding: 5px 3px;
+  gap: 4px;
   border: 0;
   border-radius: 11px;
   color: var(--color-muted);
   background: transparent;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
 
-.tabTrigger span {
+.tabNumber {
   display: grid;
   width: 24px;
   height: 24px;
@@ -480,8 +481,16 @@
   font-size: 11px;
 }
 
+.tabLabel {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .tabTrigger[data-state="active"] { color: white; background: var(--color-primary-700); }
-.tabTrigger[data-state="active"] span { color: var(--color-primary-800); background: white; }
+.tabTrigger[data-state="active"] .tabNumber { color: var(--color-primary-800); background: white; }
 
 .editorContent { max-width: 920px; margin: 0 auto; padding: 38px 0 20px; }
 .pageTitle { margin-bottom: 24px; }
@@ -827,6 +836,9 @@
   .bottomNav { grid-template-columns: 1fr 1fr; }
   .bottomNav button { width: 100%; }
   .homeSyncSummary { grid-template-columns: 1fr; }
+  .tabList { gap: 2px; }
+  .tabTrigger { min-height: 46px; padding: 3px 1px; }
+  .tabLabel { display: none; }
   .dialogActions { align-items: stretch; flex-direction: column; }
   .googleSetupStep { grid-template-columns: 34px 1fr; }
   .googleSetupStep > button,

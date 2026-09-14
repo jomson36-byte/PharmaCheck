@@ -32,6 +32,14 @@ const statusLabels: Record<Inspection["status"], string> = {
   SYNC_ERROR: "ส่งไม่สำเร็จ",
 };
 
+const tabLabels: Record<string, string> = {
+  "1": "สถานที่",
+  "2": "อุปกรณ์",
+  "3": "บุคลากร",
+  "4": "คุณภาพยา",
+  "5": "วิธีปฏิบัติ",
+};
+
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 
 async function getConfiguredGoogleClientId() {
@@ -483,17 +491,21 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
 
       <Tabs.Root value={activeTab} onValueChange={setActiveTab} className={styles.editorTabs}>
         <Tabs.List className={styles.tabList} aria-label="ส่วนของแบบตรวจ">
-          <Tabs.Trigger className={styles.tabTrigger} value="info"><span>0</span>ข้อมูลร้าน</Tabs.Trigger>
+          <Tabs.Trigger className={styles.tabTrigger} value="info" aria-label="ข้อมูลร้าน">
+            <span className={styles.tabNumber}>0</span><span className={styles.tabLabel}>ข้อมูลร้าน</span>
+          </Tabs.Trigger>
           {categories.map((category) => {
             const categoryAnswers = answers.filter((answer) => answer.categoryCode === category.code);
             const complete = categoryAnswers.length > 0 && categoryAnswers.every((answer) => answer.selectedValue !== null);
             return (
-              <Tabs.Trigger className={styles.tabTrigger} value={category.code} key={category.code}>
-                <span>{complete ? "✓" : category.code}</span>{category.name}
+              <Tabs.Trigger className={styles.tabTrigger} value={category.code} key={category.code} aria-label={category.name} title={category.name}>
+                <span className={styles.tabNumber}>{complete ? "✓" : category.code}</span><span className={styles.tabLabel}>{tabLabels[category.code]}</span>
               </Tabs.Trigger>
             );
           })}
-          <Tabs.Trigger className={styles.tabTrigger} value="review"><span>✓</span>ตรวจสอบ</Tabs.Trigger>
+          <Tabs.Trigger className={styles.tabTrigger} value="review" aria-label="ตรวจสอบ">
+            <span className={styles.tabNumber}>✓</span><span className={styles.tabLabel}>ตรวจสอบ</span>
+          </Tabs.Trigger>
         </Tabs.List>
 
         <div className={styles.editorContent}>
