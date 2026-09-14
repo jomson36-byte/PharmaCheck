@@ -393,14 +393,13 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
   const tabOrder = ["info", ...categories.map((category) => category.code), "review"];
   const currentIndex = tabOrder.indexOf(activeTab);
 
-  function handleNextStep() {
-    const nextTab = tabOrder[Math.min(tabOrder.length - 1, currentIndex + 1)];
-    setActiveTab(nextTab);
+  function navigateToStep(targetTab: string) {
+    setActiveTab(targetTab);
     setNotice(null);
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        const firstIncomplete = questionsByCategory[nextTab]?.find((question) => {
+        const firstIncomplete = questionsByCategory[targetTab]?.find((question) => {
           const answer = answers.find((item) => item.questionCode === question.code);
           return !answer || answer.selectedValue === null || (answer.selectedValue === "NA" && !answer.notApplicableReason.trim());
         });
@@ -413,6 +412,14 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
         editorTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     });
+  }
+
+  function handleNextStep() {
+    navigateToStep(tabOrder[Math.min(tabOrder.length - 1, currentIndex + 1)]);
+  }
+
+  function handlePreviousStep() {
+    navigateToStep(tabOrder[Math.max(0, currentIndex - 1)]);
   }
 
   if (inspection === undefined) {
@@ -600,7 +607,7 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
         <button
           className={styles.secondaryButton}
           disabled={currentIndex === 0}
-          onClick={() => setActiveTab(tabOrder[Math.max(0, currentIndex - 1)])}
+          onClick={handlePreviousStep}
         >
           ← ก่อนหน้า
         </button>
