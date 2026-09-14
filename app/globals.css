@@ -1,0 +1,67 @@
+:root {
+  --color-primary-900: #073b35;
+  --color-primary-800: #095044;
+  --color-primary-700: #0d6657;
+  --color-primary-600: #14806d;
+  --color-primary-100: #dff3ed;
+  --color-primary-50: #effaf6;
+  --color-ink: #16312d;
+  --color-muted: #60736f;
+  --color-line: #d7e1de;
+  --color-surface: #ffffff;
+  --color-canvas: #f3f6f5;
+  --color-warning: #a65a08;
+  --color-warning-soft: #fff3dd;
+  --color-danger: #b42318;
+  --color-danger-soft: #feeceb;
+  --color-success: #087a55;
+  --color-success-soft: #e3f7ef;
+  --shadow-card: 0 1px 2px rgb(7 59 53 / 7%), 0 8px 28px rgb(7 59 53 / 6%);
+  --radius-sm: 12px;
+  --radius-md: 18px;
+  --radius-lg: 24px;
+  --touch-target: 56px;
+  --page-padding: clamp(16px, 3vw, 32px);
+  --content-width: 1120px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--color-canvas);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: var(--color-ink);
+  background:
+    radial-gradient(circle at 85% -10%, rgb(20 128 109 / 11%), transparent 34rem),
+    var(--color-canvas);
+  font-family: -apple-system, BlinkMacSystemFont, "Noto Sans Thai", "Leelawadee UI", system-ui, sans-serif;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 3px solid #5eb5a4;
+  outline-offset: 3px;
+}
+
+::selection {
+  color: var(--color-primary-900);
+  background: #b9e8dd;
+}

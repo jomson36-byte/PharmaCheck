@@ -1,0 +1,19 @@
+{
+  "name": "PharmaCheck - GPP Inspection",
+  "short_name": "PharmaCheck",
+  "description": "แบบตรวจ GPP สำหรับ iPad ที่ทำงานแบบออฟไลน์",
+  "lang": "th",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f6f5",
+  "theme_color": "#0d6657",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
