@@ -42,7 +42,6 @@ body {
   background:
     radial-gradient(circle at 85% -10%, rgb(20 128 109 / 11%), transparent 34rem),
     var(--color-canvas);
-  font-family: -apple-system, BlinkMacSystemFont, "Noto Sans Thai", "Leelawadee UI", system-ui, sans-serif;
 }
 
 button,

@@ -109,6 +109,7 @@
 .heroActions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
 }
 
@@ -767,8 +768,21 @@
 @keyframes fadeIn { from { opacity: 0; } }
 @keyframes dialogIn { from { opacity: 0; transform: translate(-50%, -47%) scale(.98); } }
 
+@media (max-width: 900px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    margin-top: 20px;
+    gap: 24px;
+  }
+
+  .hero h1 { max-width: 560px; }
+  .heroText { max-width: 540px; }
+  .heroActions { justify-content: flex-start; }
+}
+
 @media (max-width: 760px) {
-  .hero { grid-template-columns: 1fr; align-items: start; }
+  .hero { margin-top: 12px; padding: 26px 22px; }
   .heroActions { align-items: stretch; flex-direction: column-reverse; }
   .heroActions button { width: 100%; }
   .metrics { grid-template-columns: 1fr; }
