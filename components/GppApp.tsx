@@ -82,7 +82,7 @@ export function GppApp() {
 function AppHeader({ online }: { online: boolean }) {
   return (
     <header className={styles.appHeader}>
-      <div className={styles.brandMark} aria-hidden="true">+</div>
+      <img className={styles.brandMark} src="/icons/pharmacheck-192.png" alt="" width="44" height="44" />
       <div>
         <strong className={styles.brandName}>PharmaCheck</strong>
         <span className={styles.brandTagline}>GPP Inspection</span>
