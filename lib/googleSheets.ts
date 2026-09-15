@@ -1,5 +1,5 @@
-import { db } from "./db";
-import type { InspectionSignatureRole, SubmissionPayload, SyncQueueItem } from "./models";
+import { createId, db } from "./db";
+import type { Answer, InspectionSignatureRole, SubmissionPayload, SyncQueueItem } from "./models";
 import { questions } from "./questions";
 
 const SHEET_NAME = "Submissions";
@@ -85,6 +85,7 @@ export const sheetHeaders = [
   "synced_at",
   "payload_json",
   ...SIGNATURE_ROLES.map((role) => `signature_${role}_json`),
+  "deficiencies",
 ];
 
 function canonicalPayload(payload: SubmissionPayload) {
@@ -129,7 +130,13 @@ export async function prepareInspectionForSync(inspectionId: string) {
 
   const payload: SubmissionPayload = {
     inspection,
-    answers,
+    answers: answers.map((answer) => {
+      const { notes: _legacyNotes, notApplicableReason: _legacyNaReason, ...answerWithoutLegacyFields } = answer as Answer & {
+        notes?: string;
+        notApplicableReason?: string;
+      };
+      return answerWithoutLegacyFields;
+    }),
     responsiblePersons,
     exportedAt: new Date().toISOString(),
   };
@@ -144,8 +151,8 @@ export async function prepareInspectionForSync(inspectionId: string) {
 
   const now = new Date().toISOString();
   const item: SyncQueueItem = {
-    id: crypto.randomUUID(),
-    syncBatchId: crypto.randomUUID(),
+    id: createId(),
+    syncBatchId: createId(),
     inspectionId,
     revision: (inspection.lastSyncedRevision ?? 0) + 1,
     payloadHash,
@@ -317,10 +324,6 @@ async function ensureSubmissionsSheet(spreadsheetId: string, token: string) {
 function createSheetRow(item: SyncQueueItem) {
   const { inspection, answers, responsiblePersons } = item.payloadSnapshot;
   const answerMap = new Map(answers.map((answer) => [answer.questionCode, answer]));
-  const notes = Object.fromEntries(answers.filter((answer) => answer.notes).map((answer) => [answer.questionCode, answer.notes]));
-  const naReasons = Object.fromEntries(
-    answers.filter((answer) => answer.selectedValue === "NA").map((answer) => [answer.questionCode, answer.notApplicableReason]),
-  );
   const syncedAt = new Date().toISOString();
 
   return [
@@ -345,8 +348,8 @@ function createSheetRow(item: SyncQueueItem) {
     inspection.mobile,
     JSON.stringify(responsiblePersons),
     ...questions.map((question) => answerMap.get(question.code)?.selectedValue ?? ""),
-    JSON.stringify(notes),
-    JSON.stringify(naReasons),
+    "{}",
+    "{}",
     inspection.createdAt,
     inspection.updatedAt,
     syncedAt,
@@ -355,6 +358,7 @@ function createSheetRow(item: SyncQueueItem) {
       const signature = inspection.signatures?.find((entry) => entry.role === role);
       return signature ? JSON.stringify(signature) : "";
     }),
+    inspection.deficiencies ?? "",
   ];
 }
 

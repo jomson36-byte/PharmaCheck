@@ -7,7 +7,7 @@ import * as RadioGroup from "@radix-ui/react-radio-group";
 import * as Tabs from "@radix-ui/react-tabs";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useRef, useState } from "react";
-import { createInspection, db, exportBackup, importBackup } from "@/lib/db";
+import { createId, createInspection, db, exportBackup, importBackup } from "@/lib/db";
 import {
   applyGoogleSheetPull,
   connectGoogleAccount,
@@ -112,6 +112,7 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const [syncCenterOpen, setSyncCenterOpen] = useState(false);
+  const [googleSettingsOpen, setGoogleSettingsOpen] = useState(false);
   const [dataManagerOpen, setDataManagerOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Inspection | null>(null);
   const [menuTarget, setMenuTarget] = useState<Inspection | null>(null);
@@ -139,6 +140,18 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
     } finally {
       touchCreateLock.current = false;
     }
+  }
+
+  async function handleGoogleSheetsButton() {
+    const [account, spreadsheet] = await Promise.all([
+      db.settings.get("googleAccountEmail"),
+      db.settings.get("spreadsheetId"),
+    ]);
+    if (!account?.value || !spreadsheet?.value) {
+      setGoogleSettingsOpen(true);
+      return;
+    }
+    setSyncCenterOpen(true);
   }
 
   async function handleDeleteInspection() {
@@ -199,7 +212,7 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
           <p className={styles.heroText}>ข้อมูลจะถูกบันทึกลง iPad อัตโนมัติ และส่งไป Google Sheets เมื่อคุณพร้อม</p>
         </div>
         <div className={styles.heroActions}>
-          <button className={styles.heroSecondaryButton} onClick={() => setSyncCenterOpen(true)}>
+          <button className={styles.heroSecondaryButton} onClick={handleGoogleSheetsButton}>
             <span aria-hidden="true">↥</span> ส่ง Google Sheets
             {unsyncedCount > 0 && <b>{unsyncedCount}</b>}
           </button>
@@ -372,6 +385,7 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
         online={online}
         onNotice={setNotice}
       />
+      <GoogleSettingsDialog open={googleSettingsOpen} onOpenChange={setGoogleSettingsOpen} />
     </main>
   );
 }
@@ -395,8 +409,6 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
   ) ?? [];
   const [activeTab, setActiveTab] = useState("info");
   const [notice, setNotice] = useState<Notice>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const editorTopRef = useRef<HTMLDivElement>(null);
 
   const answered = answers.filter((answer) => answer.selectedValue !== null).length;
@@ -412,7 +424,7 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
       requestAnimationFrame(() => {
         const firstIncomplete = questionsByCategory[targetTab]?.find((question) => {
           const answer = answers.find((item) => item.questionCode === question.code);
-          return !answer || answer.selectedValue === null || (answer.selectedValue === "NA" && !answer.notApplicableReason.trim());
+          return !answer || answer.selectedValue === null;
         });
         if (firstIncomplete) {
           const card = document.querySelector<HTMLElement>(`[data-question-code="${firstIncomplete.code}"]`);
@@ -480,7 +492,7 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
 
   async function addResponsiblePerson() {
     const person: ResponsiblePerson = {
-      id: crypto.randomUUID(),
+      id: createId(),
       inspectionId,
       name: "",
       licenseNumber: "",
@@ -510,46 +522,7 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
     await db.responsiblePersons.delete(id);
   }
 
-  const requiredMissing = [
-    !inspection.inspectionDate && "วันที่ตรวจ",
-    !inspection.inspector1.trim() && "ผู้ประเมิน 1",
-    !inspection.licenseNumber.trim() && "เลขที่ใบอนุญาต",
-    !inspection.pharmacyName.trim() && "ชื่อสถานประกอบการ",
-  ].filter(Boolean) as string[];
   const unanswered = answers.filter((answer) => answer.selectedValue === null).length;
-  const missingNaReasons = answers.filter((answer) => answer.selectedValue === "NA" && !answer.notApplicableReason.trim()).length;
-
-  async function handleSync() {
-    const licenseeSignature = inspection?.signatures?.find((signature) => signature.role === "licensee");
-    if (requiredMissing.length || unanswered || missingNaReasons || !licenseeSignature?.name.trim() || !licenseeSignature.signature || !licenseeSignature.signedAt) {
-      setActiveTab("review");
-      setNotice({ tone: "warning", text: "กรุณาตรวจข้อมูลและให้เจ้าของร้านลงชื่อรับรองก่อนส่ง" });
-      return;
-    }
-    const clientId = await getConfiguredGoogleClientId();
-    const spreadsheetId = (await db.settings.get("spreadsheetId"))?.value;
-    if (!clientId || !spreadsheetId) {
-      setSettingsOpen(true);
-      setNotice({ tone: "warning", text: "ตั้งค่า Google OAuth และ Spreadsheet ก่อนส่งข้อมูล" });
-      return;
-    }
-    if (!online) {
-      setNotice({ tone: "warning", text: "ยังไม่มีอินเทอร์เน็ต ข้อมูลทั้งหมดบันทึกอยู่ใน iPad แล้ว" });
-      return;
-    }
-
-    setSyncing(true);
-    try {
-      const token = await requestGoogleAccessToken(clientId);
-      const queueItem = await prepareInspectionForSync(inspectionId);
-      const range = await syncQueueItem(queueItem, spreadsheetId, token);
-      setNotice({ tone: "success", text: `ส่งเข้า Google Sheets สำเร็จ (${range})` });
-    } catch (error) {
-      setNotice({ tone: "danger", text: `${error instanceof Error ? error.message : "ส่งข้อมูลไม่สำเร็จ"} — ข้อมูลยังอยู่ใน iPad` });
-    } finally {
-      setSyncing(false);
-    }
-  }
 
   return (
     <main className={styles.editorShell}>
@@ -582,7 +555,7 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
           {categories.map((category) => {
             const categoryAnswers = answers.filter((answer) => answer.categoryCode === category.code);
             const complete = categoryAnswers.length > 0 && categoryAnswers.every((answer) =>
-              answer.selectedValue !== null && (answer.selectedValue !== "NA" || answer.notApplicableReason.trim()),
+              answer.selectedValue !== null,
             );
             return (
               <Tabs.Trigger className={styles.tabTrigger} value={category.code} key={category.code} aria-label={category.name} title={category.name}>
@@ -620,14 +593,8 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
               inspection={inspection}
               answers={answers}
               responsiblePersons={responsiblePersons}
-              requiredMissing={requiredMissing}
               unanswered={unanswered}
-              missingNaReasons={missingNaReasons}
-              online={online}
-              syncing={syncing}
-              onSync={handleSync}
               onSaveCertification={saveInspectionChanges}
-              onOpenSettings={() => setSettingsOpen(true)}
               onDeleted={onBack}
             />
           </Tabs.Content>
@@ -651,8 +618,6 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
           ถัดไป →
         </button>
       </nav>
-
-      <GoogleSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </main>
   );
 }
@@ -786,7 +751,7 @@ function CategoryForm({
       <PageTitle
         eyebrow={`หมวด ${category.code} · ตอบแล้ว ${completed}/${categoryQuestions.length}`}
         title={category.name}
-        description="แตะคำตอบที่ตรงกับผลการตรวจ เพิ่มหมายเหตุเมื่อจำเป็น"
+        description="แตะคำตอบที่ตรงกับผลการตรวจ"
       />
       <div className={styles.questionStack}>
         {categoryQuestions.map((question) => {
@@ -828,10 +793,7 @@ function QuestionCard({ question, answer, onSave }: { question: Question; answer
       <RadioGroup.Root
         className={`${styles.scoreGroup} ${question.excludable ? styles.scoreGroupFour : ""}`}
         value={answer.selectedValue === null ? "" : String(answer.selectedValue)}
-        onValueChange={(value) => onSave(answer, {
-          selectedValue: value === "NA" ? "NA" : Number(value) as 0 | 1 | 2,
-          ...(value !== "NA" ? { notApplicableReason: "" } : {}),
-        })}
+        onValueChange={(value) => onSave(answer, { selectedValue: value === "NA" ? "NA" : Number(value) as 0 | 1 | 2 })}
         aria-label={`ผลการประเมินข้อ ${question.code}`}
       >
         {choices.map((choice) => (
@@ -843,26 +805,6 @@ function QuestionCard({ question, answer, onSave }: { question: Question; answer
         ))}
       </RadioGroup.Root>
 
-      {answer.selectedValue === "NA" && (
-        <label className={styles.inlineField}>
-          <span>เหตุผลที่ไม่เกี่ยวข้อง <b>*</b></span>
-          <input
-            value={answer.notApplicableReason}
-            placeholder="เช่น ไม่มีการเก็บยาที่ต้องควบคุมอุณหภูมิ"
-            onChange={(event) => onSave(answer, { notApplicableReason: event.target.value })}
-          />
-        </label>
-      )}
-
-      <details className={styles.notesDisclosure} open={Boolean(answer.notes)}>
-        <summary>＋ เพิ่มหมายเหตุ {answer.notes && <span>มีข้อมูลแล้ว</span>}</summary>
-        <textarea
-          value={answer.notes}
-          rows={3}
-          placeholder="บันทึกสิ่งที่พบ หรือใช้ Dictation บน iPad"
-          onChange={(event) => onSave(answer, { notes: event.target.value })}
-        />
-      </details>
     </article>
   );
 }
@@ -964,33 +906,18 @@ function ReviewPanel({
   inspection,
   answers,
   responsiblePersons,
-  requiredMissing,
   unanswered,
-  missingNaReasons,
-  online,
-  syncing,
-  onSync,
   onSaveCertification,
-  onOpenSettings,
   onDeleted,
 }: {
   inspection: Inspection;
   answers: Answer[];
   responsiblePersons: ResponsiblePerson[];
-  requiredMissing: string[];
   unanswered: number;
-  missingNaReasons: number;
-  online: boolean;
-  syncing: boolean;
-  onSync: () => void;
   onSaveCertification: (changes: Partial<Inspection>) => void;
-  onOpenSettings: () => void;
   onDeleted: () => void;
 }) {
   const signatures = inspection.signatures ?? [];
-  const licenseeSignature = signatures.find((signature) => signature.role === "licensee");
-  const certified = Boolean(licenseeSignature?.name.trim() && licenseeSignature.signature && licenseeSignature.signedAt);
-  const ready = !requiredMissing.length && !unanswered && !missingNaReasons && certified;
   const answerByCode = new Map(answers.map((answer) => [answer.questionCode, answer]));
   function updateSignature(role: InspectionSignatureRole, changes: Partial<InspectionSignature>) {
     const existing = signatures.find((signature) => signature.role === role);
@@ -1103,6 +1030,15 @@ function ReviewPanel({
       </section>
 
       <section className={styles.certificationCard}>
+        <label className={styles.deficienciesField}>
+          <span>ส่วนที่บกพร่อง / ขอให้แก้ไข</span>
+          <textarea
+            value={inspection.deficiencies ?? ""}
+            rows={4}
+            placeholder="ระบุส่วนที่บกพร่องและสิ่งที่ขอให้แก้ไข"
+            onChange={(event) => onSaveCertification({ deficiencies: event.target.value })}
+          />
+        </label>
         <p className={styles.certificationStatement}>ในการตรวจครั้งนี้ ผู้ประเมินและคณะมิได้ทำให้ทรัพย์สินของผู้รับอนุญาต / ผู้ดำเนินกิจการ / ผู้มีหน้าที่ปฏิบัติการ รวมถึงผู้เกี่ยวข้อง สูญหายหรือเสียหายแต่อย่างใด ข้าพเจ้าได้อ่าน / อ่านให้ฟังแล้ว รับรองว่าถูกต้อง จึงได้ลงลายมือชื่อไว้เป็นสำคัญ</p>
         <div className={styles.signatureGrid}>
           {signatureRoles.map(({ role, label, required }) => {
@@ -1134,21 +1070,6 @@ function ReviewPanel({
       </section>
       </div>
 
-      <div className={styles.syncCard}>
-        <div>
-          <p className={styles.eyebrow}>สำรองข้อมูล</p>
-          <h2>ส่งเข้า Google Sheets</h2>
-          <p>{online ? "ระบบจะขอสิทธิ์ Google เฉพาะตอนส่งข้อมูล" : "ขณะนี้ Offline — ข้อมูลยังปลอดภัยอยู่ใน iPad"}</p>
-          {inspection.lastSyncedAt && <small>ส่งล่าสุด {formatDateTime(inspection.lastSyncedAt)} · Revision {inspection.lastSyncedRevision}</small>}
-        </div>
-        <div className={styles.syncActions}>
-          <button className={styles.ghostButton} onClick={onOpenSettings}>ตั้งค่า</button>
-          <button className={styles.primaryButton} onClick={onSync} disabled={syncing || !ready}>
-            {syncing ? "กำลังส่ง..." : inspection.lastSyncedAt ? "ตรวจและส่งอีกครั้ง" : "เชื่อม Google และส่ง"}
-          </button>
-        </div>
-      </div>
-
       <AlertDialog.Root>
         <AlertDialog.Trigger asChild><button className={styles.deleteButton}>ลบแบบตรวจนี้</button></AlertDialog.Trigger>
         <AlertDialog.Portal>
@@ -1177,12 +1098,9 @@ function inspectionIsReady(inspection: Inspection, inspectionAnswers: Answer[]) 
   const answersComplete =
     inspectionAnswers.length === questions.length &&
     inspectionAnswers.every((answer) => answer.selectedValue !== null);
-  const naReasonsComplete = inspectionAnswers.every(
-    (answer) => answer.selectedValue !== "NA" || Boolean(answer.notApplicableReason.trim()),
-  );
   const licenseeSignature = inspection.signatures?.find((signature) => signature.role === "licensee");
   const certified = Boolean(licenseeSignature?.name.trim() && licenseeSignature.signature && licenseeSignature.signedAt);
-  return headerComplete && answersComplete && naReasonsComplete && certified;
+  return headerComplete && answersComplete && certified;
 }
 
 function HomeSyncDialog({
@@ -1199,7 +1117,6 @@ function HomeSyncDialog({
   onNotice: (notice: Notice) => void;
 }) {
   const allAnswers = useLiveQuery(() => db.answers.toArray(), []) ?? [];
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [pulling, setPulling] = useState(false);
   const [pullPreview, setPullPreview] = useState<GooglePullPreview | null>(null);
@@ -1223,7 +1140,8 @@ function HomeSyncDialog({
     const clientId = await getConfiguredGoogleClientId();
     const spreadsheetId = (await db.settings.get("spreadsheetId"))?.value;
     if (!clientId || !spreadsheetId) {
-      setSettingsOpen(true);
+      onNotice({ tone: "warning", text: "ยังไม่ได้ตั้งค่า Google Sheets กรุณาเปิดใหม่จากปุ่มส่ง Google Sheets บนหน้าแรก" });
+      onOpenChange(false);
       return;
     }
 
@@ -1259,7 +1177,8 @@ function HomeSyncDialog({
     const clientId = await getConfiguredGoogleClientId();
     const spreadsheetId = (await db.settings.get("spreadsheetId"))?.value;
     if (!clientId || !spreadsheetId) {
-      setSettingsOpen(true);
+      onNotice({ tone: "warning", text: "ยังไม่ได้ตั้งค่า Google Sheets กรุณาเปิดใหม่จากปุ่มส่ง Google Sheets บนหน้าแรก" });
+      onOpenChange(false);
       return;
     }
 
@@ -1295,7 +1214,6 @@ function HomeSyncDialog({
   }
 
   return (
-    <>
       <Dialog.Root open={open} onOpenChange={onOpenChange}>
         <Dialog.Portal>
           <Dialog.Overlay className={styles.dialogOverlay} />
@@ -1381,14 +1299,11 @@ function HomeSyncDialog({
             )}
 
             <div className={styles.syncDialogFooter}>
-              <button className={styles.ghostButton} onClick={() => setSettingsOpen(true)}>⚙ ตั้งค่า Google</button>
               <Dialog.Close asChild><button className={styles.secondaryButton}>ปิด</button></Dialog.Close>
             </div>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
-      <GoogleSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
-    </>
   );
 }
 

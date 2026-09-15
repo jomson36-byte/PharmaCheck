@@ -45,7 +45,7 @@ Generate PDF
 - Weighted score และคะแนนรายหมวด
 - Rule Engine สำหรับ Pass / Fail
 - Critical Defect พร้อมหลักฐานบังคับ
-- รูปภาพและหมายเหตุรายข้อ
+- รูปภาพประกอบรายข้อ
 - Findings และ Corrective Actions
 - ลายมือชื่อหลายบทบาท
 - Submission locking และ Revision History
@@ -143,4 +143,3 @@ Evidence Based
 Audit Ready
 Template Versioned
 ```
-

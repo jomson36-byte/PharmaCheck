@@ -507,7 +507,6 @@
 
 .formCard,
 .questionCard,
-.syncCard,
 .ownerSummaryCard,
 .certificationCard {
   margin-bottom: 18px;
@@ -530,24 +529,23 @@
   gap: 18px;
 }
 
-.field,
-.inlineField {
+.field {
   display: grid;
+  min-width: 0;
   gap: 7px;
   color: #3e5550;
   font-size: 13px;
   font-weight: 700;
 }
 
-.field b,
-.inlineField b { color: var(--color-danger); }
+.field b { color: var(--color-danger); }
 .fieldWide { grid-column: 1 / -1; }
 
 .field input,
-.field textarea,
-.inlineField input,
-.notesDisclosure textarea {
+.field textarea {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 54px;
   padding: 12px 14px;
   border: 1px solid #cbd8d5;
@@ -560,9 +558,25 @@
 }
 
 .field input:focus,
-.field textarea:focus,
-.inlineField input:focus,
-.notesDisclosure textarea:focus { border-color: var(--color-primary-600); background: white; outline: 3px solid rgb(20 128 109 / 10%); }
+.field textarea:focus { border-color: var(--color-primary-600); background: white; outline: 3px solid rgb(20 128 109 / 10%); }
+
+.field input[type="date"],
+.field input[type="time"] {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+@supports (width: -webkit-fill-available) {
+  .field input[type="date"],
+  .field input[type="time"] { width: -webkit-fill-available; }
+}
 
 .personCard {
   display: grid;
@@ -617,11 +631,6 @@
 .scoreChoice > span:nth-child(2) { font-size: 12px; font-weight: 700; }
 .radioIndicator { position: absolute; top: 7px; right: 8px; display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; color: white; background: var(--color-primary-700); font-size: 11px; font-weight: 900; }
 
-.inlineField { margin-top: 15px; padding: 15px; border-radius: var(--radius-sm); background: var(--color-warning-soft); }
-.notesDisclosure { margin-top: 14px; border-top: 1px solid var(--color-line); }
-.notesDisclosure summary { min-height: 50px; padding-top: 15px; color: var(--color-primary-700); font-size: 14px; font-weight: 750; cursor: pointer; list-style: none; }
-.notesDisclosure summary::-webkit-details-marker { display: none; }
-.notesDisclosure summary span { margin-left: 8px; padding: 3px 7px; border-radius: 999px; color: var(--color-success); background: var(--color-success-soft); font-size: 10px; }
 
 .bottomNav {
   position: fixed;
@@ -715,6 +724,22 @@
 .surveySelected { color: white; background: var(--color-primary-700); font-size: 18px; font-weight: 900; }
 .notApplicableCell { color: #a9b5b2; }
 .certificationCard { border-color: #a8dccd; }
+.deficienciesField { display: grid; margin-bottom: 22px; gap: 9px; }
+.deficienciesField > span { color: #263b37; font-size: 14px; font-weight: 750; }
+.deficienciesField textarea {
+  width: 100%;
+  min-height: 112px;
+  padding: 12px 14px;
+  border: 1px solid #a8bbb6;
+  border-radius: 8px;
+  color: var(--color-ink);
+  background: white;
+  font: inherit;
+  font-size: 16px;
+  line-height: 32px;
+  resize: vertical;
+}
+.deficienciesField textarea:focus { border-color: var(--color-primary-600); outline: 3px solid rgb(20 128 109 / 10%); }
 .certificationStatement { margin: 14px 0 24px; padding: 16px 4px; border-top: 1px solid #99a6a3; border-bottom: 1px solid #99a6a3; color: #263b37; background: white; line-height: 1.9; text-indent: 2.5em; }
 .signatureGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: clamp(24px, 6vw, 64px); row-gap: 26px; }
 .signatureBlock { min-width: 0; padding: 8px 4px 16px; border: 0; border-bottom: 1px solid #c5cecc; border-radius: 0; background: white; }
@@ -730,15 +755,6 @@
 .signatureLine { position: absolute; right: 12%; bottom: 23px; left: 12%; padding-top: 5px; border-top: 1px solid #b9c9c5; color: var(--color-muted); font-size: 10px; text-align: center; pointer-events: none; }
 .signatureClearButton { position: absolute; top: 4px; right: 4px; min-height: 32px; padding: 0 9px; border: 1px solid #cfaaa5; border-radius: 2px; color: var(--color-danger); background: rgb(255 255 255 / 92%); font-size: 10px; font-weight: 750; cursor: pointer; }
 .certifiedAt { display: block; margin-top: 9px; color: var(--color-success); text-align: right; }
-
-.syncCard { display: flex; align-items: center; justify-content: space-between; gap: 24px; color: white; background: var(--color-primary-900); }
-.syncCard h2 { margin: 4px 0; }
-.syncCard p:not(.eyebrow) { margin: 0; color: rgb(255 255 255 / 70%); }
-.syncCard small { display: block; margin-top: 9px; color: #9ccdc1; }
-.syncCard .eyebrow { color: #82dbc4; }
-.syncCard .primaryButton { color: var(--color-primary-900); background: #a5ebd8; box-shadow: none; }
-.syncCard .ghostButton { color: white; }
-.syncActions { display: flex; align-items: center; gap: 6px; }
 
 .syncDialogContent { width: min(calc(100vw - 32px), 720px); }
 
@@ -815,7 +831,7 @@
 .pullPreview .homeSyncSummary { margin: 14px 0 10px; }
 .pullPreview > p { margin: 0; color: var(--color-muted); font-size: 12px; line-height: 1.5; }
 .pullConfirmButton { width: 100%; margin-top: 14px; }
-.syncDialogFooter { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--color-line); gap: 10px; }
+.syncDialogFooter { display: flex; align-items: center; justify-content: flex-end; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--color-line); gap: 10px; }
 
 .deleteButton { display: block; margin: 32px auto 0; padding: 0 20px; color: var(--color-danger); background: transparent; }
 .dangerButton { padding: 0 20px; color: white; background: var(--color-danger); }
@@ -918,10 +934,8 @@
   .toolbar button { flex: 1; }
   .formGrid,
   .personFields,
-  .reviewGrid { grid-template-columns: 1fr; }
+  .reviewGrid { grid-template-columns: minmax(0, 1fr); }
   .scoreGroupFour { grid-template-columns: repeat(2, 1fr); }
-  .syncCard { align-items: stretch; flex-direction: column; }
-  .syncActions button { flex: 1; }
   .homeSyncSummary { grid-template-columns: repeat(3, 1fr); }
   .inspectionRow { grid-template-columns: 48px minmax(0, 1fr); }
   .inspectionStatusGroup { grid-column: 2; justify-content: flex-start; }
@@ -982,7 +996,6 @@
   .progressWrap,
   .tabList,
   .bottomNav,
-  .syncCard,
   .deleteButton,
   .printButton,
   .signatureClearButton { display: none !important; }
@@ -1022,6 +1035,9 @@
   .surveySelected { color: #111; background: #ddd !important; }
   .surveyTable tr { break-inside: avoid; }
   .certificationCard { break-before: page; }
+  .deficienciesField { margin-bottom: 12px; }
+  .deficienciesField > span { color: #111; font-size: 10px; }
+  .deficienciesField textarea { min-height: 96px; padding: 5px 8px; border-color: #555; border-radius: 0; color: #111; background: white; font-size: 10px; line-height: 24px; resize: none; }
   .certificationStatement { padding: 10px 12px; border-color: #555; color: #111; background: #f5f5f5; font-size: 10px; }
   .signatureGrid { gap: 8px; }
   .signatureBlock { padding: 8px; border-color: #888; background: white; break-inside: avoid; }

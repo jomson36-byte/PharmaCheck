@@ -33,6 +33,7 @@ export interface Inspection {
   telephone: string;
   fax: string;
   mobile: string;
+  deficiencies?: string;
   signatures: InspectionSignature[];
   status: InspectionStatus;
   localRevision: number;
@@ -61,8 +62,6 @@ export interface Answer {
   weightSnapshot: number;
   isCriticalSnapshot: boolean;
   isExcludableSnapshot: boolean;
-  notApplicableReason: string;
-  notes: string;
   updatedAt: string;
 }
 

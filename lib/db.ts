@@ -45,8 +45,8 @@ function localDateParts() {
   return { date: local.slice(0, 10), time: local.slice(11, 16) };
 }
 
-function newId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+export function createId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
   return `tmp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -55,7 +55,7 @@ function newId() {
 export async function getDeviceId() {
   const existing = await db.settings.get("deviceId");
   if (existing) return existing.value;
-  const value = newId();
+  const value = createId();
   await db.settings.put({ key: "deviceId", value });
   return value;
 }
@@ -64,7 +64,7 @@ export async function createInspection() {
   const now = new Date().toISOString();
   const { date, time } = localDateParts();
   const inspection: Inspection = {
-    id: newId(),
+    id: createId(),
     schemaVersion: "1",
     templateVersion: "GPP-2014-v2",
     deviceId: await getDeviceId(),
@@ -80,6 +80,7 @@ export async function createInspection() {
     telephone: "",
     fax: "",
     mobile: "",
+    deficiencies: "",
     signatures: [],
     status: "LOCAL_DRAFT",
     localRevision: 1,
@@ -88,7 +89,7 @@ export async function createInspection() {
   };
 
   const answers: Answer[] = questions.map((question) => ({
-    id: newId(),
+    id: createId(),
     inspectionId: inspection.id,
     questionCode: question.code,
     questionTextSnapshot: question.fullText,
@@ -97,8 +98,6 @@ export async function createInspection() {
     weightSnapshot: question.weight,
     isCriticalSnapshot: Boolean(question.critical),
     isExcludableSnapshot: Boolean(question.excludable),
-    notApplicableReason: "",
-    notes: "",
     updatedAt: now,
   }));
 
