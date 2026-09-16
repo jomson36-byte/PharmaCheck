@@ -5,13 +5,21 @@ export type AppRelease = {
   changes: string[];
 };
 
-export const APP_VERSION = "0.2.1";
+export const APP_VERSION = "0.2.2";
 
 export const APP_RELEASES: AppRelease[] = [
   {
-    version: "0.2.1",
+    version: "0.2.2",
     date: "16 กันยายน 2569",
     current: true,
+    changes: [
+      "แก้ตัวอักษรไทยในหัวตาราง PDF ถูกตัดหายบางตัว",
+      "แก้เครื่องหมายช่องคะแนนที่เลือกไม่แสดงใน PDF",
+    ],
+  },
+  {
+    version: "0.2.1",
+    date: "16 กันยายน 2569",
     changes: [
       "เพิ่มหน้ารอยืนยันบัญชี Google ก่อนเริ่มส่งหรือดึงข้อมูลเมื่อ Token หมดอายุ",
       "แสดง Technical Error จาก Google OAuth เพื่อระบุปัญหา Popup และการอนุญาตได้ตรงจุด",
