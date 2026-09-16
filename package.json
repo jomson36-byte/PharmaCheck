@@ -14,9 +14,12 @@
     "@radix-ui/react-progress": "latest",
     "@radix-ui/react-radio-group": "latest",
     "@radix-ui/react-tabs": "latest",
+    "@react-pdf/renderer": "^4.9.0",
     "dexie": "latest",
     "dexie-react-hooks": "latest",
+    "fontkit": "^2.0.4",
     "next": "latest",
+    "pdfjs-dist": "^6.3.289",
     "react": "latest",
     "react-dom": "latest"
   },

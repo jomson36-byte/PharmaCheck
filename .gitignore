@@ -4,6 +4,7 @@
 # Next.js build output
 /.next
 /out
+/output
 
 # local development
 .env

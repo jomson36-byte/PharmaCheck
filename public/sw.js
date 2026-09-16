@@ -1,4 +1,4 @@
-const CACHE_NAME = "pharmacheck-shell-v3";
+const CACHE_NAME = "pharmacheck-shell-v4";
 const APP_ROOT = new URL("./", self.registration.scope).pathname;
 const APP_SHELL = [
   APP_ROOT,
@@ -7,6 +7,8 @@ const APP_SHELL = [
   `${APP_ROOT}icons/pharmacheck-192.png`,
   `${APP_ROOT}icons/pharmacheck-512.png`,
   `${APP_ROOT}icons/apple-touch-icon.png`,
+  `${APP_ROOT}fonts/Sarabun-Regular.ttf`,
+  `${APP_ROOT}fonts/Sarabun-Bold.ttf`,
 ];
 
 self.addEventListener("install", (event) => {

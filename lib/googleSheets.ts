@@ -14,13 +14,22 @@ const SIGNATURE_ROLES: InspectionSignatureRole[] = ["licensee", "duty_officer", 
 
 type TokenResponse = { access_token?: string; expires_in?: number; error?: string; error_description?: string };
 type TokenClient = { requestAccessToken: (options?: { prompt?: string }) => void };
+export type GoogleAccount = { accessToken: string; email: string; name?: string; picture?: string };
 
 export type GoogleSpreadsheet = {
   id: string;
   name: string;
   modifiedTime?: string;
   webViewLink?: string;
+  capabilities?: { canEdit?: boolean };
 };
+
+export class GoogleSheetsPermissionError extends Error {
+  constructor() {
+    super("บัญชี Google นี้ไม่มีสิทธิ์แก้ไขไฟล์ที่เลือก กรุณาเปลี่ยนบัญชี เลือกไฟล์ที่แก้ไขได้ หรือสร้าง Google Sheets ใหม่");
+    this.name = "GoogleSheetsPermissionError";
+  }
+}
 
 type GooglePullItem = {
   payload: SubmissionPayload;
@@ -46,6 +55,7 @@ declare global {
           initTokenClient: (config: {
             client_id: string;
             scope: string;
+            hint?: string;
             callback: (response: TokenResponse) => void;
             error_callback?: (error: unknown) => void;
           }) => TokenClient;
@@ -188,7 +198,7 @@ export function loadGoogleIdentityServices() {
   });
 }
 
-export async function requestGoogleAccessToken(clientId: string, selectAccount = false) {
+export async function requestGoogleAccessToken(clientId: string, selectAccount = false, loginHint?: string) {
   if (!selectAccount && cachedToken?.clientId === clientId && cachedToken.expiresAt > Date.now() + 60_000) {
     return cachedToken.accessToken;
   }
@@ -199,6 +209,7 @@ export async function requestGoogleAccessToken(clientId: string, selectAccount =
     const client = window.google!.accounts.oauth2.initTokenClient({
       client_id: clientId,
       scope: GOOGLE_SCOPES,
+      hint: loginHint,
       callback: (response) => {
         if (response.access_token) {
           cachedToken = {
@@ -216,8 +227,8 @@ export async function requestGoogleAccessToken(clientId: string, selectAccount =
   });
 }
 
-export async function connectGoogleAccount(clientId: string) {
-  const accessToken = await requestGoogleAccessToken(clientId, true);
+export async function authorizeGoogleAccount(clientId: string, selectAccount = false, loginHint?: string): Promise<GoogleAccount> {
+  const accessToken = await requestGoogleAccessToken(clientId, selectAccount, loginHint);
   const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -226,12 +237,16 @@ export async function connectGoogleAccount(clientId: string) {
   return { accessToken, email: profile.email ?? "บัญชี Google", name: profile.name, picture: profile.picture };
 }
 
+export function connectGoogleAccount(clientId: string) {
+  return authorizeGoogleAccount(clientId, true);
+}
+
 export async function listGoogleSpreadsheets(accessToken: string) {
   const params = new URLSearchParams({
     q: "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false",
     orderBy: "modifiedTime desc",
     pageSize: "100",
-    fields: "files(id,name,modifiedTime,webViewLink)",
+    fields: "files(id,name,modifiedTime,webViewLink,capabilities(canEdit))",
   });
   const response = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -241,7 +256,7 @@ export async function listGoogleSpreadsheets(accessToken: string) {
     throw new Error(body?.error?.message || "อ่านรายการ Google Sheets ไม่สำเร็จ");
   }
   const data = await response.json() as { files?: GoogleSpreadsheet[] };
-  return data.files ?? [];
+  return (data.files ?? []).filter((file) => file.capabilities?.canEdit === true);
 }
 
 export async function createGoogleSpreadsheet(accessToken: string, title: string) {
@@ -278,6 +293,7 @@ async function sheetsFetch<T>(url: string, token: string, init?: RequestInit): P
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
+    if (response.status === 403) throw new GoogleSheetsPermissionError();
     const message = body?.error?.message || `Google Sheets ตอบกลับด้วยรหัส ${response.status}`;
     throw new Error(message);
   }

@@ -2,7 +2,6 @@
 
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Dialog from "@radix-ui/react-dialog";
-import * as Progress from "@radix-ui/react-progress";
 import * as RadioGroup from "@radix-ui/react-radio-group";
 import * as Tabs from "@radix-ui/react-tabs";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -10,15 +9,16 @@ import { useEffect, useRef, useState } from "react";
 import { createId, createInspection, db, exportBackup, importBackup } from "@/lib/db";
 import {
   applyGoogleSheetPull,
-  connectGoogleAccount,
+  authorizeGoogleAccount,
   createGoogleSpreadsheet,
+  GoogleSheetsPermissionError,
   listGoogleSpreadsheets,
   prepareInspectionForSync,
   previewGoogleSheetPull,
-  requestGoogleAccessToken,
   syncQueueItem,
 } from "@/lib/googleSheets";
 import type { GooglePullPreview, GoogleSpreadsheet } from "@/lib/googleSheets";
+import type { GoogleAccount } from "@/lib/googleSheets";
 import type { Answer, AnswerValue, BackupFile, Inspection, InspectionSignature, InspectionSignatureRole, ResponsiblePerson } from "@/lib/models";
 import { categories, questions, questionsByCategory, type Question } from "@/lib/questions";
 import styles from "./GppApp.module.css";
@@ -44,10 +44,41 @@ const tabLabels: Record<string, string> = {
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const DEMO_GOOGLE_EMAIL = "tester@pharmacheck.local";
+const DEMO_SPREADSHEET_NAME = "PharmaCheck GPP · UI Test";
+
+function isLocalTestHostname(hostname: string) {
+  if (["localhost", "127.0.0.1", "0.0.0.0", "::1"].includes(hostname)) return true;
+  if (/^10\./.test(hostname) || /^192\.168\./.test(hostname)) return true;
+  const match = hostname.match(/^172\.(\d+)\./);
+  return Boolean(match && Number(match[1]) >= 16 && Number(match[1]) <= 31);
+}
 
 async function getConfiguredGoogleClientId() {
   if (GOOGLE_CLIENT_ID) return GOOGLE_CLIENT_ID;
   return (await db.settings.get("googleClientId"))?.value ?? "";
+}
+
+async function authorizeConfiguredGoogleAccount(
+  clientId: string,
+  expectedEmail?: string,
+  selectAccount = false,
+) {
+  const account = await authorizeGoogleAccount(clientId, selectAccount, expectedEmail);
+  const changed = Boolean(expectedEmail && account.email.toLowerCase() !== expectedEmail.toLowerCase());
+
+  if (changed) {
+    await db.settings.bulkDelete(["spreadsheetId", "spreadsheetName"]);
+  }
+  await db.settings.bulkPut([
+    { key: "googleAccountEmail", value: account.email },
+    { key: "googleAccountPicture", value: account.picture ?? "" },
+  ]);
+  return { account, changed };
+}
+
+function accountChangedMessage(account: GoogleAccount) {
+  return `ตรวจพบบัญชี ${account.email} ซึ่งต่างจากบัญชีที่ตั้งไว้ ระบบล้างการเลือก Google Sheets เดิมแล้ว กรุณาเลือกไฟล์ใหม่`;
 }
 
 function formatDate(value: string) {
@@ -63,6 +94,12 @@ function formatDateTime(value?: string) {
 function getDisplayedRevision(inspection: Inspection) {
   const lastSyncedRevision = inspection.lastSyncedRevision ?? 0;
   return inspection.status === "SYNCED" ? Math.max(1, lastSyncedRevision) : lastSyncedRevision + 1;
+}
+
+function pdfFilename(inspection: Inspection) {
+  const identity = inspection.licenseNumber || inspection.pharmacyName || "แบบตรวจ";
+  const safeIdentity = identity.trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-").slice(0, 48);
+  return `PharmaCheck-${safeIdentity || "แบบตรวจ"}-${inspection.inspectionDate || "ไม่ระบุวันที่"}.pdf`;
 }
 
 export function GppApp() {
@@ -87,7 +124,19 @@ export function GppApp() {
   return <Dashboard online={online} onOpen={(id) => setView({ type: "inspection", id })} />;
 }
 
-function AppHeader({ online }: { online: boolean }) {
+function AppHeader({
+  online,
+  accountEmail,
+  accountPicture,
+  onProfileClick,
+}: {
+  online: boolean;
+  accountEmail?: string;
+  accountPicture?: string;
+  onProfileClick: () => void;
+}) {
+  const profileInitial = accountEmail?.trim().charAt(0).toUpperCase() || "";
+
   return (
     <header className={styles.appHeader}>
       <img className={styles.brandMark} src={`${BASE_PATH}/icons/pharmacheck-192.png`} alt="" width="44" height="44" />
@@ -95,15 +144,43 @@ function AppHeader({ online }: { online: boolean }) {
         <strong className={styles.brandName}>PharmaCheck</strong>
         <span className={styles.brandTagline}>GPP Inspection</span>
       </div>
-      <span className={`${styles.connectionBadge} ${online ? styles.online : styles.offline}`}>
-        <span className={styles.statusDot} /> {online ? "Online" : "Offline"}
-      </span>
+      <div className={styles.headerActions}>
+        <span className={`${styles.connectionBadge} ${online ? styles.online : styles.offline}`}>
+          <span className={styles.statusDot} /> {online ? "Online" : "Offline"}
+        </span>
+        <button
+          type="button"
+          className={styles.profileButton}
+          onClick={onProfileClick}
+          aria-label={accountEmail ? `บัญชี Google ${accountEmail}` : "ตั้งค่าบัญชี Google"}
+          title={accountEmail || "ตั้งค่าบัญชี Google"}
+        >
+          {accountPicture ? (
+            <img src={accountPicture} alt="" referrerPolicy="no-referrer" />
+          ) : profileInitial ? (
+            <span aria-hidden="true">{profileInitial}</span>
+          ) : (
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7 8a7 7 0 0 0-14 0" />
+            </svg>
+          )}
+          {accountEmail && <i aria-hidden="true" />}
+        </button>
+      </div>
     </header>
   );
 }
 
 function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) => void }) {
+  const [testMode, setTestMode] = useState(false);
   const inspections = useLiveQuery(() => db.inspections.orderBy("updatedAt").reverse().toArray(), []) ?? [];
+  const googleProfile = useLiveQuery(async () => {
+    const [email, picture] = await Promise.all([
+      db.settings.get("googleAccountEmail"),
+      db.settings.get("googleAccountPicture"),
+    ]);
+    return { email: email?.value, picture: picture?.value };
+  }, []);
   const unsyncedCount = inspections.filter((inspection) => inspection.status !== "SYNCED").length;
   const latestSyncAt = inspections.reduce<string | undefined>((latest, inspection) => {
     if (!inspection.lastSyncedAt) return latest;
@@ -119,6 +196,10 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
   const [deleting, setDeleting] = useState(false);
   const touchCreateLock = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setTestMode(isLocalTestHostname(window.location.hostname));
+  }, []);
 
   async function handleCreate() {
     setCreating(true);
@@ -143,6 +224,10 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
   }
 
   async function handleGoogleSheetsButton() {
+    if (testMode) {
+      setSyncCenterOpen(true);
+      return;
+    }
     const [account, spreadsheet] = await Promise.all([
       db.settings.get("googleAccountEmail"),
       db.settings.get("spreadsheetId"),
@@ -204,7 +289,13 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
 
   return (
     <main className={styles.shell}>
-      <AppHeader online={online} />
+      {testMode && <div className={styles.testModeRibbon}>TEST MODE · LOCAL UI · ไม่มีข้อมูลส่งไป Google</div>}
+      <AppHeader
+        online={online}
+        accountEmail={testMode ? DEMO_GOOGLE_EMAIL : googleProfile?.email}
+        accountPicture={testMode ? undefined : googleProfile?.picture}
+        onProfileClick={() => setGoogleSettingsOpen(true)}
+      />
       <section className={styles.hero}>
         <div>
           <p className={styles.eyebrow}>แบบตรวจภาคสนาม</p>
@@ -384,8 +475,13 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
         inspections={inspections}
         online={online}
         onNotice={setNotice}
+        testMode={testMode}
+        onConfigure={() => {
+          setSyncCenterOpen(false);
+          setGoogleSettingsOpen(true);
+        }}
       />
-      <GoogleSettingsDialog open={googleSettingsOpen} onOpenChange={setGoogleSettingsOpen} />
+      <GoogleSettingsDialog open={googleSettingsOpen} onOpenChange={setGoogleSettingsOpen} testMode={testMode} />
     </main>
   );
 }
@@ -438,6 +534,10 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
   }
 
   function handleNextStep() {
+    if (currentIndex === tabOrder.length - 1) {
+      onBack();
+      return;
+    }
     navigateToStep(tabOrder[Math.min(tabOrder.length - 1, currentIndex + 1)]);
   }
 
@@ -527,23 +627,35 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
   return (
     <main className={styles.editorShell}>
       <header className={styles.editorHeader}>
-        <button className={styles.backButton} onClick={onBack} aria-label="กลับหน้าแรก">‹</button>
+        <button className={styles.backButton} onClick={onBack} aria-label="กลับหน้าแรก">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m15 5-7 7 7 7" />
+          </svg>
+        </button>
         <div className={styles.editorTitle}>
           <span>แบบตรวจ GPP</span>
           <strong>{inspection.pharmacyName || "แบบตรวจใหม่"}</strong>
         </div>
-        <div className={styles.saveState}>
+        <div className={styles.saveState} aria-label="บันทึกใน iPad แล้ว">
+          <div
+            className={styles.circularProgress}
+            role="progressbar"
+            aria-label={`ตอบแล้ว ${answered} จาก ${questions.length} ข้อ`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress}
+          >
+            <svg viewBox="0 0 36 36" aria-hidden="true">
+              <circle className={styles.circularProgressTrack} cx="18" cy="18" r="15.5" pathLength="100" />
+              <circle className={styles.circularProgressValue} cx="18" cy="18" r="15.5" pathLength="100" style={{ strokeDashoffset: 100 - progress }} />
+            </svg>
+            <span>{progress}%</span>
+          </div>
           <span className={styles.savedIcon}>✓</span>
           <span><strong>บันทึกใน iPad แล้ว</strong><small>{online ? statusLabels[inspection.status] : "Offline"}</small></span>
         </div>
       </header>
-
-      <div className={styles.progressWrap} ref={editorTopRef}>
-        <Progress.Root className={styles.progressRoot} value={progress}>
-          <Progress.Indicator className={styles.progressIndicator} style={{ transform: `translateX(-${100 - progress}%)` }} />
-        </Progress.Root>
-        <span>{answered}/{questions.length} ข้อ · {progress}%</span>
-      </div>
+      <div className={styles.editorTopAnchor} ref={editorTopRef} />
 
       {notice && <NoticeBanner notice={notice} onClose={() => setNotice(null)} />}
 
@@ -612,10 +724,9 @@ function InspectionEditor({ inspectionId, online, onBack }: { inspectionId: stri
         <span>{currentIndex + 1} / {tabOrder.length}</span>
         <button
           className={styles.primaryButton}
-          disabled={currentIndex === tabOrder.length - 1}
           onClick={handleNextStep}
         >
-          ถัดไป →
+          {currentIndex === tabOrder.length - 1 ? "บันทึก" : "ถัดไป →"}
         </button>
       </nav>
     </main>
@@ -917,8 +1028,35 @@ function ReviewPanel({
   onSaveCertification: (changes: Partial<Inspection>) => void;
   onDeleted: () => void;
 }) {
+  const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [pdfError, setPdfError] = useState("");
   const signatures = inspection.signatures ?? [];
   const answerByCode = new Map(answers.map((answer) => [answer.questionCode, answer]));
+
+  async function exportPdf() {
+    if (pdfGenerating) return;
+    setPdfGenerating(true);
+    setPdfError("");
+    try {
+      const { generateInspectionPdf } = await import("./InspectionPdf");
+      const blob = await generateInspectionPdf({ inspection, answers, responsiblePersons });
+      const filename = pdfFilename(inspection);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (error) {
+      console.error(error);
+      setPdfError("สร้าง PDF ไม่สำเร็จ กรุณาลองใหม่");
+    } finally {
+      setPdfGenerating(false);
+    }
+  }
+
   function updateSignature(role: InspectionSignatureRole, changes: Partial<InspectionSignature>) {
     const existing = signatures.find((signature) => signature.role === role);
     const defaults: Record<InspectionSignatureRole, string> = {
@@ -954,12 +1092,17 @@ function ReviewPanel({
     <section className={styles.reviewPage}>
       <div className={styles.reviewToolbar}>
         <span className={styles.revisionPill}>Revision {getDisplayedRevision(inspection)}</span>
-        <button type="button" className={`${styles.secondaryButton} ${styles.printButton}`} onClick={() => window.print()}>
-          พิมพ์ / บันทึก PDF
+        {pdfError && <span className={styles.pdfExportError}>{pdfError}</span>}
+        <button type="button" className={`${styles.primaryButton} ${styles.printButton}`} onClick={exportPdf} disabled={pdfGenerating}>
+          {pdfGenerating ? "กำลังเตรียม PDF..." : "ดาวน์โหลด PDF"}
+        </button>
+        <button type="button" className={`${styles.ghostButton} ${styles.printButton}`} onClick={() => window.print()} disabled={pdfGenerating}>
+          พิมพ์แบบเดิม
         </button>
       </div>
       <div className={styles.reviewPaper}>
         <header className={styles.documentHeader}>
+          <div className={styles.printDocumentMeta}>Revision {getDisplayedRevision(inspection)}</div>
           <p>บันทึกการประเมินวิธีปฏิบัติทางเภสัชกรรมชุมชน</p>
           <h1>ในสถานที่ขายยาแผนปัจจุบัน</h1>
           <span>ตามประกาศกระทรวงสาธารณสุข เรื่อง การกำหนดเกี่ยวกับสถานที่ อุปกรณ์<br />และวิธีปฏิบัติทางเภสัชกรรมชุมชน ในสถานที่ขายยาแผนปัจจุบัน ตามกฎหมายว่าด้วยยา พ.ศ. ๒๕๕๗</span>
@@ -1109,12 +1252,16 @@ function HomeSyncDialog({
   inspections,
   online,
   onNotice,
+  testMode,
+  onConfigure,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   inspections: Inspection[];
   online: boolean;
   onNotice: (notice: Notice) => void;
+  testMode: boolean;
+  onConfigure: () => void;
 }) {
   const allAnswers = useLiveQuery(() => db.answers.toArray(), []) ?? [];
   const [syncing, setSyncing] = useState(false);
@@ -1137,8 +1284,22 @@ function HomeSyncDialog({
     }
     if (!ready.length) return;
 
+    if (testMode) {
+      setSyncing(true);
+      window.setTimeout(() => {
+        setSyncing(false);
+        onNotice({ tone: "success", text: `TEST MODE · จำลองการส่งสำเร็จ ${ready.length} แบบตรวจ โดยไม่ได้ส่งข้อมูลออกจาก iPad` });
+        onOpenChange(false);
+      }, 500);
+      return;
+    }
+
     const clientId = await getConfiguredGoogleClientId();
-    const spreadsheetId = (await db.settings.get("spreadsheetId"))?.value;
+    const [spreadsheetSetting, accountSetting] = await Promise.all([
+      db.settings.get("spreadsheetId"),
+      db.settings.get("googleAccountEmail"),
+    ]);
+    const spreadsheetId = spreadsheetSetting?.value;
     if (!clientId || !spreadsheetId) {
       onNotice({ tone: "warning", text: "ยังไม่ได้ตั้งค่า Google Sheets กรุณาเปิดใหม่จากปุ่มส่ง Google Sheets บนหน้าแรก" });
       onOpenChange(false);
@@ -1148,7 +1309,13 @@ function HomeSyncDialog({
     setSyncing(true);
     let completed = 0;
     try {
-      const token = await requestGoogleAccessToken(clientId);
+      const { account, changed } = await authorizeConfiguredGoogleAccount(clientId, accountSetting?.value);
+      if (changed) {
+        onNotice({ tone: "warning", text: accountChangedMessage(account) });
+        onConfigure();
+        return;
+      }
+      const token = account.accessToken;
       for (const inspection of ready) {
         const queueItem = await prepareInspectionForSync(inspection.id);
         await syncQueueItem(queueItem, spreadsheetId, token);
@@ -1162,6 +1329,7 @@ function HomeSyncDialog({
         text: `${error instanceof Error ? error.message : "ส่งข้อมูลไม่สำเร็จ"} — ส่งสำเร็จแล้ว ${completed} รายการ และข้อมูลที่เหลือยังอยู่ใน iPad`,
       });
       onOpenChange(false);
+      if (error instanceof GoogleSheetsPermissionError) onConfigure();
     } finally {
       setSyncing(false);
     }
@@ -1173,9 +1341,18 @@ function HomeSyncDialog({
       onOpenChange(false);
       return;
     }
+    if (testMode) {
+      onNotice({ tone: "warning", text: "TEST MODE · ไม่มีการดึงข้อมูลจาก Google Sheets จริง" });
+      onOpenChange(false);
+      return;
+    }
 
     const clientId = await getConfiguredGoogleClientId();
-    const spreadsheetId = (await db.settings.get("spreadsheetId"))?.value;
+    const [spreadsheetSetting, accountSetting] = await Promise.all([
+      db.settings.get("spreadsheetId"),
+      db.settings.get("googleAccountEmail"),
+    ]);
+    const spreadsheetId = spreadsheetSetting?.value;
     if (!clientId || !spreadsheetId) {
       onNotice({ tone: "warning", text: "ยังไม่ได้ตั้งค่า Google Sheets กรุณาเปิดใหม่จากปุ่มส่ง Google Sheets บนหน้าแรก" });
       onOpenChange(false);
@@ -1184,8 +1361,13 @@ function HomeSyncDialog({
 
     setPulling(true);
     try {
-      const token = await requestGoogleAccessToken(clientId);
-      setPullPreview(await previewGoogleSheetPull(spreadsheetId, token));
+      const { account, changed } = await authorizeConfiguredGoogleAccount(clientId, accountSetting?.value);
+      if (changed) {
+        onNotice({ tone: "warning", text: accountChangedMessage(account) });
+        onConfigure();
+        return;
+      }
+      setPullPreview(await previewGoogleSheetPull(spreadsheetId, account.accessToken));
     } catch (error) {
       onNotice({ tone: "danger", text: error instanceof Error ? error.message : "ดึงข้อมูลจาก Google Sheets ไม่สำเร็จ" });
       onOpenChange(false);
@@ -1299,6 +1481,7 @@ function HomeSyncDialog({
             )}
 
             <div className={styles.syncDialogFooter}>
+              <button className={styles.secondaryButton} onClick={onConfigure}>เปลี่ยนบัญชีหรือไฟล์</button>
               <Dialog.Close asChild><button className={styles.secondaryButton}>ปิด</button></Dialog.Close>
             </div>
           </Dialog.Content>
@@ -1307,7 +1490,7 @@ function HomeSyncDialog({
   );
 }
 
-function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+function GoogleSettingsDialog({ open, onOpenChange, testMode }: { open: boolean; onOpenChange: (open: boolean) => void; testMode: boolean }) {
   const [spreadsheetId, setSpreadsheetId] = useState("");
   const [spreadsheetName, setSpreadsheetName] = useState("");
   const [accountEmail, setAccountEmail] = useState("");
@@ -1339,6 +1522,10 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
     });
   }, [open]);
 
+  const displayedAccountEmail = testMode ? DEMO_GOOGLE_EMAIL : accountEmail;
+  const displayedSpreadsheetName = testMode ? DEMO_SPREADSHEET_NAME : spreadsheetName;
+  const hasDisplayedSpreadsheet = testMode || Boolean(spreadsheetId);
+
   async function chooseAccount() {
     const clientId = await getConfiguredGoogleClientId();
     if (!clientId) {
@@ -1348,10 +1535,13 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
     setConnecting(true);
     setError("");
     try {
-      const account = await connectGoogleAccount(clientId);
+      const { account, changed } = await authorizeConfiguredGoogleAccount(clientId, accountEmail, true);
+      if (changed) {
+        setSpreadsheetId("");
+        setSpreadsheetName("");
+      }
       setAccessToken(account.accessToken);
       setAccountEmail(account.email);
-      await db.settings.put({ key: "googleAccountEmail", value: account.email });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "เชื่อมต่อบัญชี Google ไม่สำเร็จ");
     } finally {
@@ -1367,9 +1557,15 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       throw new Error("ระบบเชื่อมต่อ Google ยังไม่พร้อม กรุณาติดต่อผู้ดูแลระบบ");
     }
 
-    const token = await requestGoogleAccessToken(clientId);
-    setAccessToken(token);
-    return token;
+    const { account, changed } = await authorizeConfiguredGoogleAccount(clientId, accountEmail);
+    setAccessToken(account.accessToken);
+    setAccountEmail(account.email);
+    if (changed) {
+      setSpreadsheetId("");
+      setSpreadsheetName("");
+      throw new Error(accountChangedMessage(account));
+    }
+    return account.accessToken;
   }
 
   async function chooseSpreadsheet() {
@@ -1433,10 +1629,10 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
               <span className={styles.stepNumber}>1</span>
               <div>
                 <strong>เลือกบัญชี Google</strong>
-                <p>{accountEmail || "ยังไม่ได้เชื่อมต่อบัญชี"}</p>
+                <p>{displayedAccountEmail || "ยังไม่ได้เชื่อมต่อบัญชี"}</p>
               </div>
-              <button className={styles.secondaryButton} onClick={chooseAccount} disabled={connecting}>
-                {connecting ? "กำลังเชื่อมต่อ..." : accountEmail ? "เปลี่ยนบัญชี" : "เลือกบัญชี Google"}
+              <button className={styles.secondaryButton} onClick={chooseAccount} disabled={connecting || testMode}>
+                {testMode ? "ข้อมูลจำลอง" : connecting ? "กำลังเชื่อมต่อ..." : accountEmail ? "เปลี่ยนบัญชี" : "เลือกบัญชี Google"}
               </button>
             </section>
 
@@ -1444,14 +1640,14 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
               <span className={styles.stepNumber}>2</span>
               <div>
                 <strong>เลือก Google Sheets</strong>
-                <p>{spreadsheetName || "ยังไม่ได้เลือกไฟล์"}</p>
+                <p>{displayedSpreadsheetName || "ยังไม่ได้เลือกไฟล์"}</p>
               </div>
               <div className={styles.googleSheetActions}>
-                <button className={styles.secondaryButton} onClick={() => setShowCreateSheet(true)} disabled={creatingSheet}>
+                <button className={styles.secondaryButton} onClick={() => setShowCreateSheet(true)} disabled={creatingSheet || testMode}>
                   ＋ สร้างใหม่
                 </button>
-                <button className={styles.primaryButton} onClick={chooseSpreadsheet} disabled={picking}>
-                  {picking ? "กำลังเปิดรายการ..." : spreadsheetId ? "เปลี่ยนไฟล์" : "เลือก Google Sheets"}
+                <button className={styles.primaryButton} onClick={chooseSpreadsheet} disabled={picking || testMode}>
+                  {testMode ? "ข้อมูลจำลอง" : picking ? "กำลังเปิดรายการ..." : spreadsheetId ? "เปลี่ยนไฟล์" : "เลือก Google Sheets"}
                 </button>
               </div>
             </section>
@@ -1483,7 +1679,7 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                 <strong>Google Sheets ของ {accountEmail}</strong>
                 <button className={styles.iconButton} onClick={() => setShowSpreadsheetList(false)} aria-label="ปิดรายการ">×</button>
               </div>
-              {!spreadsheets.length && <p className={styles.mutedMessage}>ไม่พบไฟล์ Google Sheets ในบัญชีนี้</p>}
+              {!spreadsheets.length && <p className={styles.mutedMessage}>ไม่พบ Google Sheets ที่บัญชีนี้มีสิทธิ์แก้ไข กรุณาสร้างไฟล์ใหม่</p>}
               {spreadsheets.map((sheet) => (
                 <button key={sheet.id} className={styles.googleSheetOption} onClick={() => selectSpreadsheet(sheet)}>
                   <span aria-hidden="true">▦</span>
@@ -1497,16 +1693,16 @@ function GoogleSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
             </div>
           )}
 
-          {spreadsheetId && (
+          {hasDisplayedSpreadsheet && (
             <div className={styles.googleConnectedStatus}>
               <span>✓</span>
-              <div><strong>พร้อมใช้งาน</strong><small>{spreadsheetName}</small></div>
+              <div><strong>{testMode ? "พร้อมทดสอบ UI" : "พร้อมใช้งาน"}</strong><small>{displayedSpreadsheetName}</small></div>
             </div>
           )}
           {error && <p className={styles.googleSetupError}>{error}</p>}
 
           <div className={styles.dialogActions}>
-            <Dialog.Close asChild><button className={styles.primaryButton} disabled={!spreadsheetId}>เสร็จสิ้น</button></Dialog.Close>
+            <Dialog.Close asChild><button className={styles.primaryButton} disabled={!hasDisplayedSpreadsheet}>เสร็จสิ้น</button></Dialog.Close>
           </div>
         </Dialog.Content>
       </Dialog.Portal>

@@ -4,6 +4,7 @@ const githubPagesBasePath = "/PharmaCheck";
 
 const nextConfig = {
   reactStrictMode: true,
+  devIndicators: false,
   allowedDevOrigins: ["127.0.0.1", "192.168.100.108", "192.168.100.110"],
   ...(isGitHubPages
     ? {
