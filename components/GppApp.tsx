@@ -17,6 +17,7 @@ import {
   prepareInspectionForSync,
   previewGoogleSheetPull,
   syncQueueItem,
+  validateGoogleSpreadsheetCompatibility,
 } from "@/lib/googleSheets";
 import type { GooglePullPreview, GoogleSpreadsheet } from "@/lib/googleSheets";
 import type { GoogleAccount } from "@/lib/googleSheets";
@@ -244,6 +245,13 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
       db.settings.get("spreadsheetId"),
     ]);
     if (!account?.value || !spreadsheet?.value) {
+      if (!online) {
+        setNotice({
+          tone: "warning",
+          text: "ยังไม่มีอินเทอร์เน็ต จึงยังเชื่อมต่อ Google Sheets ไม่ได้ ข้อมูลทั้งหมดของคุณยังบันทึกอยู่ใน iPad",
+        });
+        return;
+      }
       setGoogleSettingsOpen(true);
       return;
     }
@@ -1307,6 +1315,7 @@ function HomeSyncDialog({
   const allAnswers = useLiveQuery(() => db.answers.toArray(), []) ?? [];
   const [syncing, setSyncing] = useState(false);
   const [pulling, setPulling] = useState(false);
+  const [authenticating, setAuthenticating] = useState(false);
   const [pullPreview, setPullPreview] = useState<GooglePullPreview | null>(null);
   const unsynced = inspections.filter((inspection) => inspection.status !== "SYNCED");
   const ready = unsynced.filter((inspection) =>
@@ -1350,7 +1359,9 @@ function HomeSyncDialog({
     setSyncing(true);
     let completed = 0;
     try {
+      setAuthenticating(true);
       const { account, changed } = await authorizeConfiguredGoogleAccount(clientId, accountSetting?.value);
+      setAuthenticating(false);
       if (changed) {
         onNotice({ tone: "warning", text: accountChangedMessage(account) });
         onConfigure();
@@ -1372,6 +1383,7 @@ function HomeSyncDialog({
       onOpenChange(false);
       if (error instanceof GoogleSheetsPermissionError) onConfigure();
     } finally {
+      setAuthenticating(false);
       setSyncing(false);
     }
   }
@@ -1402,7 +1414,9 @@ function HomeSyncDialog({
 
     setPulling(true);
     try {
+      setAuthenticating(true);
       const { account, changed } = await authorizeConfiguredGoogleAccount(clientId, accountSetting?.value);
+      setAuthenticating(false);
       if (changed) {
         onNotice({ tone: "warning", text: accountChangedMessage(account) });
         onConfigure();
@@ -1413,6 +1427,7 @@ function HomeSyncDialog({
       onNotice({ tone: "danger", text: error instanceof Error ? error.message : "ดึงข้อมูลจาก Google Sheets ไม่สำเร็จ" });
       onOpenChange(false);
     } finally {
+      setAuthenticating(false);
       setPulling(false);
     }
   }
@@ -1498,7 +1513,7 @@ function HomeSyncDialog({
                   disabled={pulling || syncing}
                 >
                   <span className={styles.syncTransferIcon}>↓</span>
-                  <span><strong>{pulling ? "กำลังตรวจข้อมูล..." : "ดึงข้อมูลลง iPad"}</strong><small>รับแบบตรวจจาก Google Sheets</small></span>
+                  <span><strong>{authenticating ? "กำลังยืนยันบัญชี Google..." : pulling ? "กำลังตรวจข้อมูล..." : "ดึงข้อมูลลง iPad"}</strong><small>รับแบบตรวจจาก Google Sheets</small></span>
                 </button>
                 <button
                   className={`${styles.primaryButton} ${styles.syncTransferButton}`}
@@ -1506,7 +1521,7 @@ function HomeSyncDialog({
                   onClick={syncAllReady}
                 >
                   <span className={styles.syncTransferIcon}>↑</span>
-                  <span><strong>{syncing ? "กำลังส่งข้อมูล..." : `ส่งขึ้น Google ${ready.length} แบบ`}</strong><small>{ready.length ? "สำรองแบบตรวจที่กรอกครบ" : "ยังไม่มีแบบตรวจที่พร้อมส่ง"}</small></span>
+                  <span><strong>{authenticating ? "กำลังยืนยันบัญชี Google..." : syncing ? "กำลังส่งข้อมูล..." : `ส่งขึ้น Google ${ready.length} แบบ`}</strong><small>{ready.length ? "สำรองแบบตรวจที่กรอกครบ" : "ยังไม่มีแบบตรวจที่พร้อมส่ง"}</small></span>
                 </button>
               </div>
             )}
@@ -1543,6 +1558,7 @@ function GoogleSettingsDialog({ open, onOpenChange, testMode }: { open: boolean;
   const [connecting, setConnecting] = useState(false);
   const [picking, setPicking] = useState(false);
   const [creatingSheet, setCreatingSheet] = useState(false);
+  const [checkingSpreadsheetId, setCheckingSpreadsheetId] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -1559,6 +1575,7 @@ function GoogleSettingsDialog({ open, onOpenChange, testMode }: { open: boolean;
       setSpreadsheets([]);
       setShowSpreadsheetList(false);
       setShowCreateSheet(false);
+      setCheckingSpreadsheetId("");
       setError("");
     });
   }, [open]);
@@ -1624,14 +1641,28 @@ function GoogleSettingsDialog({ open, onOpenChange, testMode }: { open: boolean;
     }
   }
 
-  async function selectSpreadsheet(sheet: GoogleSpreadsheet) {
-    setSpreadsheetId(sheet.id);
-    setSpreadsheetName(sheet.name);
-    setShowSpreadsheetList(false);
-    await db.settings.bulkPut([
-      { key: "spreadsheetId", value: sheet.id },
-      { key: "spreadsheetName", value: sheet.name },
-    ]);
+  async function selectSpreadsheet(sheet: GoogleSpreadsheet, skipCompatibilityCheck = false) {
+    setCheckingSpreadsheetId(sheet.id);
+    setError("");
+    try {
+      if (!skipCompatibilityCheck) {
+        const token = await getAccessTokenForAction();
+        await validateGoogleSpreadsheetCompatibility(sheet.id, token);
+      }
+      setSpreadsheetId(sheet.id);
+      setSpreadsheetName(sheet.name);
+      setShowSpreadsheetList(false);
+      await db.settings.bulkPut([
+        { key: "spreadsheetId", value: sheet.id },
+        { key: "spreadsheetName", value: sheet.name },
+      ]);
+      return true;
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "ตรวจสอบ Google Sheets ไม่สำเร็จ");
+      return false;
+    } finally {
+      setCheckingSpreadsheetId("");
+    }
   }
 
   async function createSpreadsheet() {
@@ -1642,8 +1673,8 @@ function GoogleSettingsDialog({ open, onOpenChange, testMode }: { open: boolean;
     try {
       const token = await getAccessTokenForAction();
       const sheet = await createGoogleSpreadsheet(token, title);
-      await selectSpreadsheet(sheet);
-      setShowCreateSheet(false);
+      const selected = await selectSpreadsheet(sheet, true);
+      if (selected) setShowCreateSheet(false);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "สร้าง Google Sheets ไม่สำเร็จ");
     } finally {
@@ -1680,15 +1711,15 @@ function GoogleSettingsDialog({ open, onOpenChange, testMode }: { open: boolean;
             <section className={styles.googleSetupStep}>
               <span className={styles.stepNumber}>2</span>
               <div>
-                <strong>เลือก Google Sheets</strong>
+                <strong>เลือกไฟล์สำหรับ PharmaCheck</strong>
                 <p>{displayedSpreadsheetName || "ยังไม่ได้เลือกไฟล์"}</p>
               </div>
               <div className={styles.googleSheetActions}>
-                <button className={styles.secondaryButton} onClick={() => setShowCreateSheet(true)} disabled={creatingSheet || testMode}>
-                  ＋ สร้างใหม่
+                <button className={styles.primaryButton} onClick={() => setShowCreateSheet(true)} disabled={creatingSheet || testMode}>
+                  ＋ สร้างไฟล์ใหม่ (แนะนำ)
                 </button>
-                <button className={styles.primaryButton} onClick={chooseSpreadsheet} disabled={picking || testMode}>
-                  {testMode ? "ข้อมูลจำลอง" : picking ? "กำลังเปิดรายการ..." : spreadsheetId ? "เปลี่ยนไฟล์" : "เลือก Google Sheets"}
+                <button className={styles.secondaryButton} onClick={chooseSpreadsheet} disabled={picking || testMode}>
+                  {testMode ? "ข้อมูลจำลอง" : picking ? accountEmail && !accessToken ? "กำลังยืนยันบัญชี..." : "กำลังเปิดรายการ..." : spreadsheetId ? "เปลี่ยนไฟล์" : "เลือก Google Sheets"}
                 </button>
               </div>
             </section>
@@ -1708,7 +1739,7 @@ function GoogleSettingsDialog({ open, onOpenChange, testMode }: { open: boolean;
               <div>
                 <button className={styles.secondaryButton} onClick={() => setShowCreateSheet(false)} disabled={creatingSheet}>ยกเลิก</button>
                 <button className={styles.primaryButton} onClick={createSpreadsheet} disabled={!newSheetName.trim() || creatingSheet}>
-                  {creatingSheet ? "กำลังสร้าง..." : "สร้างและเลือกไฟล์นี้"}
+                  {creatingSheet ? accountEmail && !accessToken ? "กำลังยืนยันบัญชี..." : "กำลังสร้าง..." : "สร้างและเลือกไฟล์นี้"}
                 </button>
               </div>
             </div>
@@ -1722,13 +1753,18 @@ function GoogleSettingsDialog({ open, onOpenChange, testMode }: { open: boolean;
               </div>
               {!spreadsheets.length && <p className={styles.mutedMessage}>ไม่พบ Google Sheets ที่บัญชีนี้มีสิทธิ์แก้ไข กรุณาสร้างไฟล์ใหม่</p>}
               {spreadsheets.map((sheet) => (
-                <button key={sheet.id} className={styles.googleSheetOption} onClick={() => selectSpreadsheet(sheet)}>
+                <button
+                  key={sheet.id}
+                  className={styles.googleSheetOption}
+                  onClick={() => selectSpreadsheet(sheet)}
+                  disabled={Boolean(checkingSpreadsheetId)}
+                >
                   <span aria-hidden="true">▦</span>
                   <span>
                     <strong>{sheet.name}</strong>
                     <small>{sheet.modifiedTime ? `แก้ไขล่าสุด ${formatDateTime(sheet.modifiedTime)}` : "Google Sheets"}</small>
                   </span>
-                  <b>{sheet.id === spreadsheetId ? "เลือกอยู่ ✓" : "เลือก"}</b>
+                  <b>{checkingSpreadsheetId === sheet.id ? "กำลังตรวจสอบ..." : sheet.id === spreadsheetId ? "เลือกอยู่ ✓" : "เลือก"}</b>
                 </button>
               ))}
             </div>

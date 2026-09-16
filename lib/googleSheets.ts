@@ -337,6 +337,26 @@ async function ensureSubmissionsSheet(spreadsheetId: string, token: string) {
   }
 }
 
+export async function validateGoogleSpreadsheetCompatibility(spreadsheetId: string, token: string) {
+  const base = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}`;
+  const metadata = await sheetsFetch<{ sheets?: Array<{ properties?: { title?: string } }> }>(
+    `${base}?fields=sheets.properties.title`,
+    token,
+  );
+  const hasSubmissionsSheet = metadata.sheets?.some((sheet) => sheet.properties?.title === SHEET_NAME);
+  if (!hasSubmissionsSheet) return;
+
+  const headerRange = encodeURIComponent(`${SHEET_NAME}!1:1`);
+  const current = await sheetsFetch<{ values?: string[][] }>(`${base}/values/${headerRange}`, token);
+  if (!current.values?.length) return;
+
+  const currentHeaders = current.values[0];
+  const isCompatiblePrefix = currentHeaders.every((header, index) => header === sheetHeaders[index]);
+  if (!isCompatiblePrefix) {
+    throw new Error("ไฟล์นี้มีหัวตาราง Submissions ที่ไม่ตรงกับ PharmaCheck กรุณาเลือกไฟล์อื่นหรือสร้างไฟล์ใหม่");
+  }
+}
+
 function createSheetRow(item: SyncQueueItem) {
   const { inspection, answers, responsiblePersons } = item.payloadSnapshot;
   const answerMap = new Map(answers.map((answer) => [answer.questionCode, answer]));
