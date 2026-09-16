@@ -48,6 +48,13 @@ export type GooglePullPreview = {
 
 let cachedToken: { clientId: string; accessToken: string; expiresAt: number } | null = null;
 
+export function hasValidGoogleAccessToken(clientId: string) {
+  return Boolean(
+    cachedToken?.clientId === clientId &&
+    cachedToken.expiresAt > Date.now() + 60_000,
+  );
+}
+
 declare global {
   interface Window {
     google?: {
@@ -200,7 +207,7 @@ export function loadGoogleIdentityServices() {
 }
 
 export async function requestGoogleAccessToken(clientId: string, selectAccount = false, loginHint?: string) {
-  if (!selectAccount && cachedToken?.clientId === clientId && cachedToken.expiresAt > Date.now() + 60_000) {
+  if (!selectAccount && hasValidGoogleAccessToken(clientId) && cachedToken) {
     return cachedToken.accessToken;
   }
   await loadGoogleIdentityServices();

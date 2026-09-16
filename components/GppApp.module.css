@@ -824,6 +824,36 @@
 
 .syncDialogContent { width: min(calc(100vw - 32px), 720px); }
 
+.googleConfirmationCard {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: start;
+  margin-top: 22px;
+  padding: 20px;
+  gap: 14px;
+  border: 1px solid var(--color-primary-200);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-50);
+}
+
+.googleConfirmationIcon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border-radius: 50%;
+  color: white;
+  background: var(--color-primary-700);
+  font-size: 20px;
+  font-weight: 850;
+}
+
+.googleConfirmationCard h3 { margin: 3px 0 6px; color: var(--color-primary-900); font-size: 19px; }
+.googleConfirmationCard p { margin: 0; color: var(--color-muted); line-height: 1.55; }
+.googleConfirmationCard small { display: block; margin-top: 8px; color: var(--color-success); font-weight: 650; }
+.googleConfirmationCard > button { grid-column: 1 / -1; width: 100%; }
+.googleConfirmationError { grid-column: 1 / -1; padding: 11px 13px; border-radius: 9px; color: var(--color-danger) !important; background: var(--color-danger-soft); font-size: 12px; }
+
 .homeSyncSummary {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

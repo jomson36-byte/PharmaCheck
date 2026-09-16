@@ -13,7 +13,9 @@ import {
   authorizeGoogleAccount,
   createGoogleSpreadsheet,
   GoogleSheetsPermissionError,
+  hasValidGoogleAccessToken,
   listGoogleSpreadsheets,
+  loadGoogleIdentityServices,
   prepareInspectionForSync,
   previewGoogleSheetPull,
   syncQueueItem,
@@ -1317,14 +1319,82 @@ function HomeSyncDialog({
   const [pulling, setPulling] = useState(false);
   const [authenticating, setAuthenticating] = useState(false);
   const [pullPreview, setPullPreview] = useState<GooglePullPreview | null>(null);
+  const [googleSession, setGoogleSession] = useState<{ clientId: string; accountEmail?: string; ready: boolean } | null>(null);
+  const [confirmationError, setConfirmationError] = useState("");
   const unsynced = inspections.filter((inspection) => inspection.status !== "SYNCED");
   const ready = unsynced.filter((inspection) =>
     inspectionIsReady(inspection, allAnswers.filter((answer) => answer.inspectionId === inspection.id)),
   );
 
   useEffect(() => {
-    if (!open) setPullPreview(null);
-  }, [open]);
+    if (!open) {
+      setPullPreview(null);
+      setGoogleSession(null);
+      setConfirmationError("");
+      return;
+    }
+    if (testMode) {
+      setGoogleSession({ clientId: "", accountEmail: DEMO_GOOGLE_EMAIL, ready: true });
+      return;
+    }
+
+    let cancelled = false;
+    setGoogleSession(null);
+    setConfirmationError("");
+    void (async () => {
+      const [clientId, accountSetting] = await Promise.all([
+        getConfiguredGoogleClientId(),
+        db.settings.get("googleAccountEmail"),
+      ]);
+      if (cancelled) return;
+      const session = {
+        clientId,
+        accountEmail: accountSetting?.value,
+        ready: Boolean(clientId && hasValidGoogleAccessToken(clientId)),
+      };
+      setGoogleSession(session);
+      if (!session.ready && clientId) {
+        try {
+          await loadGoogleIdentityServices();
+        } catch (error) {
+          if (!cancelled) setConfirmationError(error instanceof Error ? error.message : "โหลด Google Sign-in ไม่สำเร็จ");
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, testMode]);
+
+  async function confirmGoogleSession() {
+    if (!online) {
+      setConfirmationError("ยังไม่มีอินเทอร์เน็ต ข้อมูลทั้งหมดของคุณยังบันทึกอยู่ใน iPad");
+      return;
+    }
+    if (!googleSession?.clientId) {
+      setConfirmationError("ระบบเชื่อมต่อ Google ยังไม่พร้อม กรุณาติดต่อผู้ดูแลระบบ");
+      return;
+    }
+
+    setAuthenticating(true);
+    setConfirmationError("");
+    try {
+      const { account, changed } = await authorizeConfiguredGoogleAccount(
+        googleSession.clientId,
+        googleSession.accountEmail,
+      );
+      if (changed) {
+        onNotice({ tone: "warning", text: accountChangedMessage(account) });
+        onConfigure();
+        return;
+      }
+      setGoogleSession({ clientId: googleSession.clientId, accountEmail: account.email, ready: true });
+    } catch (error) {
+      setConfirmationError(
+        `${error instanceof Error ? error.message : "ยืนยันบัญชี Google ไม่สำเร็จ"} — ยังไม่มีข้อมูลถูกส่ง และข้อมูลยังอยู่ใน iPad`,
+      );
+    } finally {
+      setAuthenticating(false);
+    }
+  }
 
   async function syncAllReady() {
     if (!online) {
@@ -1353,6 +1423,10 @@ function HomeSyncDialog({
     if (!clientId || !spreadsheetId) {
       onNotice({ tone: "warning", text: "ยังไม่ได้ตั้งค่า Google Sheets กรุณาเปิดใหม่จากปุ่มส่ง Google Sheets บนหน้าแรก" });
       onOpenChange(false);
+      return;
+    }
+    if (!hasValidGoogleAccessToken(clientId)) {
+      setGoogleSession({ clientId, accountEmail: accountSetting?.value, ready: false });
       return;
     }
 
@@ -1411,6 +1485,10 @@ function HomeSyncDialog({
       onOpenChange(false);
       return;
     }
+    if (!hasValidGoogleAccessToken(clientId)) {
+      setGoogleSession({ clientId, accountEmail: accountSetting?.value, ready: false });
+      return;
+    }
 
     setPulling(true);
     try {
@@ -1467,13 +1545,37 @@ function HomeSyncDialog({
               ระบบจะส่งแบบตรวจที่กรอกครบเป็น Revision ใหม่ ส่วนแบบร่างที่ยังไม่ครบจะยังอยู่ใน iPad
             </Dialog.Description>
 
-            <div className={styles.homeSyncSummary}>
-              <div><strong>{unsynced.length}</strong><span>ยังไม่ส่ง</span></div>
-              <div><strong>{ready.length}</strong><span>พร้อมส่ง</span></div>
-              <div><strong>{unsynced.length - ready.length}</strong><span>ยังกรอกไม่ครบ</span></div>
-            </div>
+            {!testMode && !googleSession?.ready ? (
+              <section className={styles.googleConfirmationCard} aria-live="polite">
+                <span className={styles.googleConfirmationIcon} aria-hidden="true">G</span>
+                <div>
+                  <p className={styles.eyebrow}>รอยืนยันบัญชี</p>
+                  <h3>{googleSession ? "ยืนยันบัญชี Google อีกครั้ง" : "กำลังตรวจสถานะบัญชี Google..."}</h3>
+                  <p>
+                    {googleSession
+                      ? <>บัญชี <strong>{googleSession.accountEmail || "Google ที่ตั้งไว้"}</strong> และไฟล์เดิมยังถูกจำไว้ กรุณายืนยันก่อนส่งข้อมูล</>
+                      : "ระบบกำลังตรวจสอบการเชื่อมต่อเดิมของคุณ"}
+                  </p>
+                  <small>ยังไม่มีข้อมูลถูกส่ง และแบบตรวจทั้งหมดปลอดภัยอยู่ใน iPad</small>
+                </div>
+                {confirmationError && <p className={styles.googleConfirmationError}>{confirmationError}</p>}
+                <button
+                  className={styles.primaryButton}
+                  onClick={confirmGoogleSession}
+                  disabled={!googleSession || authenticating || !online}
+                >
+                  {authenticating ? "กำลังยืนยันบัญชี Google..." : online ? "ยืนยันบัญชี Google" : "รอการเชื่อมต่ออินเทอร์เน็ต"}
+                </button>
+              </section>
+            ) : (
+              <>
+                <div className={styles.homeSyncSummary}>
+                  <div><strong>{unsynced.length}</strong><span>ยังไม่ส่ง</span></div>
+                  <div><strong>{ready.length}</strong><span>พร้อมส่ง</span></div>
+                  <div><strong>{unsynced.length - ready.length}</strong><span>ยังกรอกไม่ครบ</span></div>
+                </div>
 
-            <div className={styles.homeSyncList}>
+                <div className={styles.homeSyncList}>
               {!unsynced.length && <p className={styles.mutedMessage}>ข้อมูลทั้งหมดส่งเข้า Google Sheets แล้ว</p>}
               {unsynced.map((inspection) => {
                 const itemReady = inspectionIsReady(
@@ -1488,7 +1590,7 @@ function HomeSyncDialog({
                   </div>
                 );
               })}
-            </div>
+                </div>
 
             {pullPreview && (
               <section className={styles.pullPreview} aria-label="สรุปข้อมูลที่จะดึงจาก Google Sheets">
@@ -1534,6 +1636,8 @@ function HomeSyncDialog({
               >
                 {pulling ? "กำลังนำเข้าข้อมูล..." : `ยืนยันนำเข้า ${pullPreview.additions.length + pullPreview.updates.length} รายการ`}
               </button>
+            )}
+              </>
             )}
 
             <div className={styles.syncDialogFooter}>
