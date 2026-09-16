@@ -1,4 +1,5 @@
 import type { Font as FontkitFont } from "fontkit";
+import type { ComponentProps } from "react";
 import {
   Document,
   Font,
@@ -63,7 +64,8 @@ const styles = StyleSheet.create({
   categoryWeightCell: { width: "10%", borderLeftWidth: 0.65, borderLeftColor: colors.line },
   categoryResultCell: { width: "10%", borderLeftWidth: 0.65, borderLeftColor: colors.line },
   tableHeader: { minHeight: 42, flexDirection: "row", alignItems: "stretch", borderTopWidth: 0.65, borderRightWidth: 0.65, borderBottomWidth: 0.65, borderLeftWidth: 0.65, borderColor: colors.line, backgroundColor: colors.pale },
-  tableHeaderText: { paddingVertical: 3, paddingHorizontal: 2, fontSize: 6.2, fontWeight: 700, lineHeight: 1.2, textAlign: "center", textAlignVertical: "center" },
+  tableHeaderText: { paddingVertical: 3, paddingHorizontal: 2, justifyContent: "center" },
+  tableHeaderLine: { paddingRight: 2, fontSize: 6.2, fontWeight: 700, lineHeight: 1.2, textAlign: "center" },
   questionHeader: { width: "56%", justifyContent: "center" },
   scoreHeader: { width: "6%", borderLeftWidth: 0.65, borderLeftColor: colors.line },
   weightHeader: { width: "10%", borderLeftWidth: 0.65, borderLeftColor: colors.line },
@@ -228,15 +230,26 @@ function Detail({ label, value, metrics, wide = false }: { label: string; value?
 }
 
 function TableHeader({ metrics }: { metrics: PdfFontMetrics }) {
+  const HeaderCell = ({ text, style }: { text: string; style: ComponentProps<typeof View>["style"] }) => (
+    <View style={[styles.tableHeaderText, style]}>
+      {text.split("\n").map((line, index) => (
+        <Text key={`${line}-${index}`} style={styles.tableHeaderLine}>
+          {protectPdfText(line)}<TextEndGuard />
+        </Text>
+      ))}
+    </View>
+  );
+  const questionHeading = wrapThaiLines(metrics, "ข้อกำหนดตามประกาศฯ เรื่อง การกำหนดเกี่ยวกับสถานที่ อุปกรณ์ และวิธีปฏิบัติทางเภสัชกรรมชุมชน ในร้านขายยาแผนปัจจุบัน (ข.ย.๑)", { maxWidth: questionColumnWidth - 12, fontSize: 6.2, fontWeight: 700 });
+
   return (
     <View style={styles.tableHeader}>
-      <Text style={[styles.tableHeaderText, styles.questionHeader]}>{wrapThaiLines(metrics, "ข้อกำหนดตามประกาศฯ เรื่อง การกำหนดเกี่ยวกับสถานที่ อุปกรณ์ และวิธีปฏิบัติทางเภสัชกรรมชุมชน ในร้านขายยาแผนปัจจุบัน (ข.ย.๑)", { maxWidth: questionColumnWidth - 8, fontSize: 6.2, fontWeight: 700 })}<TextEndGuard /></Text>
-      <Text style={[styles.tableHeaderText, styles.scoreHeader]}>ปรับปรุง{`\n`}(๐)</Text>
-      <Text style={[styles.tableHeaderText, styles.scoreHeader]}>พอใช้{`\n`}(๑)</Text>
-      <Text style={[styles.tableHeaderText, styles.scoreHeader]}>ดี{`\n`}(๒)</Text>
-      <Text style={[styles.tableHeaderText, styles.scoreHeader]}>N/A</Text>
-      <Text style={[styles.tableHeaderText, styles.weightHeader]}>ค่าน้ำหนัก{`\n`}คะแนน</Text>
-      <Text style={[styles.tableHeaderText, styles.resultHeader]}>คะแนนที่ได้{`\n`}× ค่าน้ำหนัก</Text>
+      <HeaderCell text={questionHeading} style={styles.questionHeader} />
+      <HeaderCell text={"ปรับปรุง\n(๐)"} style={styles.scoreHeader} />
+      <HeaderCell text={"พอใช้\n(๑)"} style={styles.scoreHeader} />
+      <HeaderCell text={"ดี\n(๒)"} style={styles.scoreHeader} />
+      <HeaderCell text="N/A" style={styles.scoreHeader} />
+      <HeaderCell text={"ค่าน้ำหนัก\nคะแนน"} style={styles.weightHeader} />
+      <HeaderCell text={"คะแนนที่ได้\n× ค่าน้ำหนัก"} style={styles.resultHeader} />
     </View>
   );
 }
