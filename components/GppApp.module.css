@@ -29,6 +29,23 @@
   box-shadow: 0 7px 18px rgb(13 102 87 / 20%);
 }
 
+.brandButton {
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  margin: -4px;
+  gap: 12px;
+  border: 0;
+  border-radius: 17px;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.brandButton:hover { background: rgb(255 255 255 / 62%); }
+.brandButton:focus-visible { outline: 3px solid rgb(25 135 113 / 24%); outline-offset: 2px; }
+
 .brandName,
 .brandTagline {
   display: block;
@@ -891,6 +908,17 @@
 .dangerOutlineButton { min-height: var(--touch-target); padding: 0 20px; border: 1px solid #efb5b0; border-radius: var(--radius-sm); color: var(--color-danger); background: white; font-weight: 700; cursor: pointer; }
 .inspectionMenuDialog { width: min(calc(100vw - 32px), 420px); }
 .inspectionMenuActions { display: grid; margin-top: 22px; gap: 10px; }
+
+.changelogDialog { width: min(calc(100vw - 32px), 640px); }
+.releaseList { display: grid; margin-top: 22px; gap: 14px; }
+.releaseItem { padding: 18px; border: 1px solid var(--color-line); border-radius: var(--radius-sm); background: var(--color-canvas); }
+.releaseHeading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.releaseHeading strong { color: var(--color-primary-900); font-size: 17px; }
+.releaseHeading span { padding: 4px 8px; border-radius: 999px; color: var(--color-success); background: var(--color-success-soft); font-size: 11px; font-weight: 800; }
+.releaseHeading time { margin-left: auto; color: var(--color-muted); font-size: 12px; }
+.releaseItem ul { margin: 12px 0 0; padding-left: 20px; color: var(--color-muted); }
+.releaseItem li { padding-left: 3px; line-height: 1.55; }
+.releaseItem li + li { margin-top: 5px; }
 
 .dialogOverlay {
   position: fixed;

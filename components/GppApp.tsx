@@ -7,6 +7,7 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useRef, useState } from "react";
 import { createId, createInspection, db, exportBackup, importBackup } from "@/lib/db";
+import { APP_RELEASES, APP_VERSION } from "@/lib/changelog";
 import {
   applyGoogleSheetPull,
   authorizeGoogleAccount,
@@ -128,22 +129,31 @@ function AppHeader({
   online,
   accountEmail,
   accountPicture,
+  onLogoClick,
   onProfileClick,
 }: {
   online: boolean;
   accountEmail?: string;
   accountPicture?: string;
+  onLogoClick: () => void;
   onProfileClick: () => void;
 }) {
   const profileInitial = accountEmail?.trim().charAt(0).toUpperCase() || "";
 
   return (
     <header className={styles.appHeader}>
-      <img className={styles.brandMark} src={`${BASE_PATH}/icons/pharmacheck-192.png`} alt="" width="44" height="44" />
-      <div>
-        <strong className={styles.brandName}>PharmaCheck</strong>
-        <span className={styles.brandTagline}>GPP Inspection</span>
-      </div>
+      <button
+        type="button"
+        className={styles.brandButton}
+        onClick={onLogoClick}
+        aria-label={`ดูเวอร์ชันและประวัติการเปลี่ยนแปลง PharmaCheck ${APP_VERSION}`}
+      >
+        <img className={styles.brandMark} src={`${BASE_PATH}/icons/pharmacheck-192.png`} alt="" width="44" height="44" />
+        <span>
+          <strong className={styles.brandName}>PharmaCheck</strong>
+          <span className={styles.brandTagline}>GPP Inspection</span>
+        </span>
+      </button>
       <div className={styles.headerActions}>
         <span className={`${styles.connectionBadge} ${online ? styles.online : styles.offline}`}>
           <span className={styles.statusDot} /> {online ? "Online" : "Offline"}
@@ -189,6 +199,7 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const [syncCenterOpen, setSyncCenterOpen] = useState(false);
+  const [changelogOpen, setChangelogOpen] = useState(false);
   const [googleSettingsOpen, setGoogleSettingsOpen] = useState(false);
   const [dataManagerOpen, setDataManagerOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Inspection | null>(null);
@@ -294,6 +305,7 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
         online={online}
         accountEmail={testMode ? DEMO_GOOGLE_EMAIL : googleProfile?.email}
         accountPicture={testMode ? undefined : googleProfile?.picture}
+        onLogoClick={() => setChangelogOpen(true)}
         onProfileClick={() => setGoogleSettingsOpen(true)}
       />
       <section className={styles.hero}>
@@ -396,6 +408,35 @@ function Dashboard({ online, onOpen }: { online: boolean; onOpen: (id: string) =
           </div>
         )}
       </section>
+      <Dialog.Root open={changelogOpen} onOpenChange={setChangelogOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className={styles.dialogOverlay} />
+          <Dialog.Content className={`${styles.dialogContent} ${styles.changelogDialog}`}>
+            <div className={styles.dialogHeading}>
+              <div>
+                <p className={styles.eyebrow}>PharmaCheck · เวอร์ชัน {APP_VERSION}</p>
+                <Dialog.Title>เวอร์ชันและการเปลี่ยนแปลง</Dialog.Title>
+              </div>
+              <Dialog.Close className={styles.iconButton} aria-label="ปิด">×</Dialog.Close>
+            </div>
+            <Dialog.Description>รายการฟีเจอร์และการปรับปรุงที่สำคัญในแต่ละเวอร์ชัน</Dialog.Description>
+            <div className={styles.releaseList}>
+              {APP_RELEASES.map((release) => (
+                <section className={styles.releaseItem} key={release.version} aria-label={`เวอร์ชัน ${release.version}`}>
+                  <div className={styles.releaseHeading}>
+                    <strong>เวอร์ชัน {release.version}</strong>
+                    {release.current && <span>ปัจจุบัน</span>}
+                    <time>{release.date}</time>
+                  </div>
+                  <ul>
+                    {release.changes.map((change) => <li key={change}>{change}</li>)}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
       <Dialog.Root open={dataManagerOpen} onOpenChange={setDataManagerOpen}>
         <Dialog.Portal>
           <Dialog.Overlay className={styles.dialogOverlay} />
