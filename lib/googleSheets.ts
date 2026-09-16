@@ -13,6 +13,7 @@ const GOOGLE_SCOPES = [
 const SIGNATURE_ROLES: InspectionSignatureRole[] = ["licensee", "duty_officer", "assessor_1", "assessor_2", "witness_1", "witness_2"];
 
 type TokenResponse = { access_token?: string; expires_in?: number; error?: string; error_description?: string };
+type GoogleIdentityError = { type?: string; error?: string; message?: string; error_description?: string };
 type TokenClient = { requestAccessToken: (options?: { prompt?: string }) => void };
 export type GoogleAccount = { accessToken: string; email: string; name?: string; picture?: string };
 
@@ -57,7 +58,7 @@ declare global {
             scope: string;
             hint?: string;
             callback: (response: TokenResponse) => void;
-            error_callback?: (error: unknown) => void;
+            error_callback?: (error: GoogleIdentityError) => void;
           }) => TokenClient;
           revoke: (token: string, callback?: () => void) => void;
         };
@@ -219,9 +220,17 @@ export async function requestGoogleAccessToken(clientId: string, selectAccount =
           };
           resolve(response.access_token);
         }
-        else reject(new Error(response.error_description || response.error || "ไม่ได้รับสิทธิ์จาก Google"));
+        else {
+          const code = response.error || "unknown_token_error";
+          const detail = response.error_description ? ` — ${response.error_description}` : "";
+          reject(new Error(`Google OAuth token error: ${code}${detail}`));
+        }
       },
-      error_callback: () => reject(new Error("การเชื่อมต่อ Google ถูกยกเลิก")),
+      error_callback: (error) => {
+        const code = error.type || error.error || "unknown_identity_error";
+        const detail = error.message || error.error_description;
+        reject(new Error(`Google Identity Services error: ${code}${detail ? ` — ${detail}` : ""}`));
+      },
     });
     client.requestAccessToken({ prompt: selectAccount ? "select_account" : "" });
   });
