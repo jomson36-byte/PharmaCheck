@@ -5,13 +5,22 @@ export type AppRelease = {
   changes: string[];
 };
 
-export const APP_VERSION = "0.2.0";
+export const APP_VERSION = "0.2.1";
 
 export const APP_RELEASES: AppRelease[] = [
   {
-    version: "0.2.0",
+    version: "0.2.1",
     date: "16 กันยายน 2569",
     current: true,
+    changes: [
+      "เพิ่มหน้ารอยืนยันบัญชี Google ก่อนเริ่มส่งหรือดึงข้อมูลเมื่อ Token หมดอายุ",
+      "แสดง Technical Error จาก Google OAuth เพื่อระบุปัญหา Popup และการอนุญาตได้ตรงจุด",
+      "ยืนยันให้ผู้ใช้ทราบว่าข้อมูลยังปลอดภัยใน iPad ระหว่างรอเชื่อมต่อใหม่",
+    ],
+  },
+  {
+    version: "0.2.0",
+    date: "16 กันยายน 2569",
     changes: [
       "เพิ่มหน้าต่างแสดงเวอร์ชันและประวัติการเปลี่ยนแปลงจากโลโก้ PharmaCheck",
       "ปรับขั้นตอนการตรวจและการส่งออก PDF ให้ใช้งานสะดวกขึ้น",
