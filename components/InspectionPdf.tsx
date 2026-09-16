@@ -558,7 +558,7 @@ function QuestionRow({ prepared }: { prepared: PreparedQuestion }) {
             value === "NA" && !question.excludable ? styles.scoreUnavailable : {},
           ]}
         >
-          {value === "NA" && !question.excludable ? "-" : selectedValue === value ? "✓" : ""}
+          {value === "NA" && !question.excludable ? "-" : selectedValue === value ? "X" : ""}
         </Text>
       ))}
       <Text style={styles.weightCell}>{toThaiDigits(question.weight)}</Text>
