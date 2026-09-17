@@ -25,6 +25,7 @@ import type { GooglePullPreview, GoogleSpreadsheet } from "@/lib/googleSheets";
 import type { GoogleAccount } from "@/lib/googleSheets";
 import type { Answer, AnswerValue, BackupFile, Inspection, InspectionSignature, InspectionSignatureRole, ResponsiblePerson } from "@/lib/models";
 import { categories, questions, questionsByCategory, type Question } from "@/lib/questions";
+import { calculateInspectionScore, roundScore } from "@/lib/scoring";
 import styles from "./GppApp.module.css";
 
 type View = { type: "dashboard" } | { type: "inspection"; id: string };
@@ -1083,6 +1084,15 @@ function ReviewPanel({
   const [pdfError, setPdfError] = useState("");
   const signatures = inspection.signatures ?? [];
   const answerByCode = new Map(answers.map((answer) => [answer.questionCode, answer]));
+  const score = calculateInspectionScore(answers);
+  const criticalStatusLabel = score.criticalDefect.status === "PASS"
+    ? "ผ่าน"
+    : score.criticalDefect.status === "FAIL"
+      ? "ไม่ผ่าน"
+      : "ข้อมูลไม่ครบ";
+  const criticalDetailCodes = score.criticalDefect.status === "FAIL"
+    ? score.criticalDefect.failedQuestionCodes
+    : score.criticalDefect.incompleteQuestionCodes;
 
   async function exportPdf() {
     if (pdfGenerating) return;
@@ -1183,6 +1193,50 @@ function ReviewPanel({
             </dd>
           </div>
         </dl>
+      </section>
+
+      <section className={styles.scoringReviewSection} aria-labelledby="scoring-summary-heading">
+        <div className={styles.surveyReviewHeading}>
+          <div><p className={styles.eyebrow}>ผลการประเมิน</p><h2 id="scoring-summary-heading">สรุปคะแนน</h2></div>
+          <span>สูตร Google Sheet · หมวดละ 20%</span>
+        </div>
+        <div className={styles.resultSummary}>
+          <div>
+            <strong>{score.overallPercentage === null ? "—" : `${roundScore(score.overallPercentage)}%`}</strong>
+            <span>คะแนนรวม 5 หมวด</span>
+          </div>
+          <div className={
+            score.criticalDefect.status === "PASS"
+              ? styles.resultSuccess
+              : score.criticalDefect.status === "FAIL"
+                ? styles.resultDanger
+                : styles.resultAttention
+          }>
+            <strong>{criticalStatusLabel}</strong>
+            <span>Critical Defect</span>
+          </div>
+        </div>
+        <div className={styles.categoryScoreGrid}>
+          {score.categories.map((categoryScore) => (
+            <div key={categoryScore.categoryCode}>
+              <span>หมวด {categoryScore.categoryCode}</span>
+              <strong>{categoryScore.percentage === null ? "—" : `${roundScore(categoryScore.percentage)}%`}</strong>
+              <small>
+                {categoryScore.isComplete
+                  ? `${categoryScore.earnedScore} / ${categoryScore.fullScore} คะแนน`
+                  : "ยังคำนวณไม่ได้"}
+              </small>
+            </div>
+          ))}
+        </div>
+        {criticalDetailCodes.length > 0 && (
+          <p className={score.criticalDefect.status === "FAIL" ? styles.criticalFailure : styles.criticalIncomplete}>
+            {score.criticalDefect.status === "FAIL" ? "Critical Defect ที่ได้ 0" : "Critical Defect ที่ข้อมูลไม่ครบ"}: {criticalDetailCodes.join(", ")}
+          </p>
+        )}
+        <p className={styles.resultDisclaimer}>
+          คะแนนรวมเป็นค่าเฉลี่ยร้อยละของทั้ง 5 หมวด โดยแต่ละหมวดมีน้ำหนักเท่ากัน 20% และ N/A ตัดฐานเฉพาะข้อที่กำหนดให้ตัดฐานได้; Critical Defect ข้อใดได้ 0 ให้ผลเป็นไม่ผ่าน
+        </p>
       </section>
 
       <section className={styles.surveyReviewSection}>

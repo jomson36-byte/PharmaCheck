@@ -5,13 +5,24 @@ export type AppRelease = {
   changes: string[];
 };
 
-export const APP_VERSION = "0.2.2";
+export const APP_VERSION = "0.3.0";
 
 export const APP_RELEASES: AppRelease[] = [
   {
+    version: "0.3.0",
+    date: "17 กันยายน 2569",
+    current: true,
+    changes: [
+      "เพิ่มระบบคำนวณคะแนน 5 หมวด โดยแต่ละหมวดมีน้ำหนักเท่ากัน 20%",
+      "เพิ่มการตรวจ Critical Defect และรองรับการตัดฐานสำหรับข้อที่เลือก N/A ได้",
+      "เพิ่มสรุปคะแนนรายหมวดและผล Critical Defect ในหน้าตรวจทานและไฟล์ PDF",
+      "เปลี่ยนสีหมึกเซ็นชื่อใน PDF เป็นสีน้ำเงิน",
+      "เพิ่ม automated tests และ CI เพื่อตรวจคะแนน TypeScript และ production build ก่อนเผยแพร่",
+    ],
+  },
+  {
     version: "0.2.2",
     date: "16 กันยายน 2569",
-    current: true,
     changes: [
       "แก้ตัวอักษรไทยในหัวตาราง PDF ถูกตัดหายบางตัว",
       "แก้เครื่องหมายช่องคะแนนที่เลือกไม่แสดงใน PDF",

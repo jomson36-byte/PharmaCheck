@@ -12,6 +12,7 @@ import {
 } from "@react-pdf/renderer";
 import type { Answer, Inspection, InspectionSignatureRole, ResponsiblePerson } from "@/lib/models";
 import { categories, questions, questionsByCategory } from "@/lib/questions";
+import { calculateInspectionScore, roundScore, type InspectionScore } from "@/lib/scoring";
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
@@ -83,6 +84,22 @@ const styles = StyleSheet.create({
   categorySummary: { flexDirection: "row", borderRightWidth: 0.65, borderBottomWidth: 0.65, borderLeftWidth: 0.65, borderColor: colors.line, minHeight: 25 },
   categorySummaryLabel: { width: "56%", paddingVertical: 4, paddingHorizontal: 5, fontSize: 7, fontWeight: 700 },
   categorySummaryValue: { width: "44%", paddingVertical: 4, paddingHorizontal: 5, borderLeftWidth: 0.65, borderLeftColor: colors.line, fontSize: 7, fontWeight: 700, textAlign: "center" },
+  scoreHero: { flexDirection: "row", marginTop: 6, marginBottom: 16, borderWidth: 0.8, borderColor: colors.line },
+  scoreHeroBlock: { width: "50%", minHeight: 98, alignItems: "center", justifyContent: "center", paddingVertical: 14, paddingHorizontal: 10 },
+  scoreHeroDivider: { borderLeftWidth: 0.8, borderLeftColor: colors.line },
+  scoreHeroValue: { paddingRight: 2, fontSize: 23, fontWeight: 700, lineHeight: 1.2 },
+  scoreHeroLabel: { marginTop: 11, paddingRight: 2, fontSize: 8, lineHeight: 1.3 },
+  scoreTable: { borderTopWidth: 0.7, borderRightWidth: 0.7, borderLeftWidth: 0.7, borderColor: colors.line },
+  scoreTableRow: { flexDirection: "row", minHeight: 31, alignItems: "center", borderBottomWidth: 0.7, borderBottomColor: colors.line },
+  scoreTableHeader: { backgroundColor: colors.pale },
+  scoreCategoryCell: { width: "48%", paddingVertical: 6, paddingHorizontal: 8, fontSize: 8 },
+  scoreNumberCell: { width: "26%", paddingVertical: 6, paddingHorizontal: 5, borderLeftWidth: 0.7, borderLeftColor: colors.line, fontSize: 8, textAlign: "center" },
+  scorePercentCell: { width: "26%", paddingVertical: 6, paddingHorizontal: 5, borderLeftWidth: 0.7, borderLeftColor: colors.line, fontSize: 8, fontWeight: 700, textAlign: "center" },
+  scoreHeaderText: { fontWeight: 700 },
+  criticalPanel: { marginTop: 16, padding: 11, borderWidth: 0.8, borderColor: colors.line },
+  criticalHeading: { paddingRight: 2, fontSize: 10, fontWeight: 700 },
+  criticalDetail: { marginTop: 4, paddingRight: 2, fontSize: 8, lineHeight: 1.5 },
+  scoreNote: { marginTop: 12, paddingRight: 8, fontSize: 7.5, lineHeight: 1.55 },
   certificationTitle: { marginBottom: 5, paddingRight: 2, fontSize: 10, fontWeight: 700 },
   deficienciesBox: { minHeight: 66, padding: 8, borderWidth: 0.7, borderColor: colors.line },
   certificationStatement: { marginTop: 8, paddingTop: 7, paddingRight: 11, paddingBottom: 7, paddingLeft: 9, borderTopWidth: 0.7, borderBottomWidth: 0.7, borderColor: colors.line, backgroundColor: colors.pale, fontSize: 7.5, lineHeight: 1.5 },
@@ -280,12 +297,14 @@ type SummaryItem = {
   code: string;
   weightedScore: number;
   fullScore: number;
+  percentage: number | null;
+  isComplete: boolean;
   height: number;
 };
 
 type SurveyItem = PreparedQuestion | CategoryItem | SummaryItem;
 
-function prepareSurveyPages(metrics: PdfFontMetrics, answerByCode: Map<string, Answer>) {
+function prepareSurveyPages(metrics: PdfFontMetrics, answerByCode: Map<string, Answer>, score: InspectionScore) {
   const pages: SurveyItem[][] = [];
   let page: SurveyItem[] = [];
   let usedHeight = 0;
@@ -327,13 +346,17 @@ function prepareSurveyPages(metrics: PdfFontMetrics, answerByCode: Map<string, A
     addItem({ kind: "category", code: category.code, name: category.name, height: 28 });
     preparedQuestions.forEach(addItem);
 
-    const applicableQuestions = categoryQuestions.filter((question) => answerByCode.get(question.code)?.selectedValue !== "NA");
-    const weightedScore = applicableQuestions.reduce((sum, question) => {
-      const selectedValue = answerByCode.get(question.code)?.selectedValue;
-      return sum + (typeof selectedValue === "number" ? selectedValue * question.weight : 0);
-    }, 0);
-    const fullScore = applicableQuestions.reduce((sum, question) => sum + 2 * question.weight, 0);
-    addItem({ kind: "summary", code: category.code, weightedScore, fullScore, height: 25 });
+    const categoryScore = score.categories.find((item) => item.categoryCode === category.code);
+    if (!categoryScore) throw new Error(`Missing score for category ${category.code}`);
+    addItem({
+      kind: "summary",
+      code: category.code,
+      weightedScore: categoryScore.earnedScore,
+      fullScore: categoryScore.fullScore,
+      percentage: categoryScore.percentage,
+      isComplete: categoryScore.isComplete,
+      height: 25,
+    });
   }
 
   pushPage();
@@ -430,9 +453,17 @@ async function assertPdfQuestionsComplete(blob: Blob, pages: SurveyItem[][]) {
   }
 }
 
-function InspectionPdf({ inspection, responsiblePersons, metrics, surveyPages }: PdfProps & { metrics: PdfFontMetrics; surveyPages: SurveyItem[][] }) {
+function InspectionPdf({ inspection, responsiblePersons, metrics, surveyPages, score }: PdfProps & { metrics: PdfFontMetrics; surveyPages: SurveyItem[][]; score: InspectionScore }) {
   const signatures = inspection.signatures ?? [];
-  const totalPages = surveyPages.length + 2;
+  const totalPages = surveyPages.length + 3;
+  const criticalStatusLabel = score.criticalDefect.status === "PASS"
+    ? "ผ่าน"
+    : score.criticalDefect.status === "FAIL"
+      ? "ไม่ผ่าน"
+      : "ข้อมูลไม่ครบ";
+  const criticalDetailCodes = score.criticalDefect.status === "FAIL"
+    ? score.criticalDefect.failedQuestionCodes
+    : score.criticalDefect.incompleteQuestionCodes;
 
   return (
     <Document
@@ -483,6 +514,53 @@ function InspectionPdf({ inspection, responsiblePersons, metrics, surveyPages }:
         <Footer inspection={inspection} pageNumber={1} totalPages={totalPages} />
       </Page>
 
+      <Page size="A4" style={styles.page}>
+        <Text style={styles.revision}>Revision {toThaiDigits(displayedRevision(inspection))}</Text>
+        <Text style={styles.sectionTitle}>สรุปผลคะแนน</Text>
+        <View style={styles.scoreHero}>
+          <View style={styles.scoreHeroBlock}>
+            <Text style={styles.scoreHeroValue}>
+              {score.overallPercentage === null ? "-" : `${toThaiDigits(roundScore(score.overallPercentage).toFixed(2))}%`}
+            </Text>
+            <Text style={styles.scoreHeroLabel}>คะแนนรวมจากค่าเฉลี่ยทั้ง ๕ หมวด</Text>
+          </View>
+          <View style={[styles.scoreHeroBlock, styles.scoreHeroDivider]}>
+            <Text style={styles.scoreHeroValue}>{criticalStatusLabel}</Text>
+            <Text style={styles.scoreHeroLabel}>ผล Critical Defect</Text>
+          </View>
+        </View>
+
+        <View style={styles.scoreTable}>
+          <View style={[styles.scoreTableRow, styles.scoreTableHeader]}>
+            <Text style={[styles.scoreCategoryCell, styles.scoreHeaderText]}>หมวดการประเมิน</Text>
+            <Text style={[styles.scoreNumberCell, styles.scoreHeaderText]}>คะแนนที่ได้ / คะแนนเต็ม</Text>
+            <Text style={[styles.scorePercentCell, styles.scoreHeaderText]}>ร้อยละ</Text>
+          </View>
+          {score.categories.map((categoryScore) => (
+            <View key={categoryScore.categoryCode} style={styles.scoreTableRow}>
+              <Text style={styles.scoreCategoryCell}>{toThaiDigits(categoryScore.categoryCode)}. {categoryScore.categoryName}</Text>
+              <Text style={styles.scoreNumberCell}>{toThaiDigits(categoryScore.earnedScore)} / {toThaiDigits(categoryScore.fullScore)}</Text>
+              <Text style={styles.scorePercentCell}>
+                {categoryScore.percentage === null ? "-" : toThaiDigits(roundScore(categoryScore.percentage).toFixed(2))}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.criticalPanel}>
+          <Text style={styles.criticalHeading}>Critical Defect: {criticalStatusLabel}</Text>
+          <Text style={styles.criticalDetail}>
+            {criticalDetailCodes.length
+              ? `${score.criticalDefect.status === "FAIL" ? "ข้อที่ได้คะแนน ๐" : "ข้อที่ข้อมูลไม่ครบ"}: ${toThaiDigits(criticalDetailCodes.join(", "))}`
+              : "ไม่พบ Critical Defect ที่ได้คะแนน ๐"}
+          </Text>
+        </View>
+        <Text style={styles.scoreNote}>
+          สูตรคะแนน: คำนวณร้อยละของแต่ละหมวด แล้วนำทั้ง ๕ หมวดมาเฉลี่ยโดยแต่ละหมวดมีน้ำหนักเท่ากันร้อยละ ๒๐; N/A ตัดฐานเฉพาะข้อที่กำหนดให้ตัดฐานได้ และ Critical Defect ข้อใดได้คะแนน ๐ ให้ผลเป็นไม่ผ่าน
+        </Text>
+        <Footer inspection={inspection} pageNumber={2} totalPages={totalPages} />
+      </Page>
+
       {surveyPages.map((items, pageIndex) => (
         <Page key={`survey-${pageIndex}`} size="A4" style={[styles.page, styles.surveyPage]} wrap={false}>
           <TableHeader metrics={metrics} />
@@ -505,14 +583,14 @@ function InspectionPdf({ inspection, responsiblePersons, metrics, surveyPages }:
               return (
                 <View key={`summary-${item.code}-${itemIndex}`} style={styles.categorySummary} wrap={false}>
                   <Text style={styles.categorySummaryLabel}>สรุปคะแนนหมวดที่ {toThaiDigits(item.code)}</Text>
-                  <Text style={styles.categorySummaryValue}>คะแนนรวม × น้ำหนัก (A) {toThaiDigits(item.weightedScore)}   คะแนนเต็ม (B) {toThaiDigits(item.fullScore)}   ร้อยละ {item.fullScore ? toThaiDigits(Math.round((item.weightedScore / item.fullScore) * 100)) : "๐"}</Text>
+                  <Text style={styles.categorySummaryValue}>คะแนนรวม × น้ำหนัก (A) {toThaiDigits(item.weightedScore)}   คะแนนเต็ม (B) {toThaiDigits(item.fullScore)}   ร้อยละ {item.isComplete && item.percentage !== null ? toThaiDigits(roundScore(item.percentage).toFixed(2)) : "-"}</Text>
                 </View>
               );
             }
 
             return <QuestionRow key={`question-${item.question.code}`} prepared={item} />;
           })}
-          <Footer inspection={inspection} pageNumber={pageIndex + 2} totalPages={totalPages} />
+          <Footer inspection={inspection} pageNumber={pageIndex + 3} totalPages={totalPages} />
         </Page>
       ))}
 
@@ -606,9 +684,10 @@ async function loadPdfFontMetrics() {
 export async function generateInspectionPdf(props: PdfProps) {
   const metrics = await loadPdfFontMetrics();
   const answerByCode = new Map(props.answers.map((answer) => [answer.questionCode, answer]));
-  const surveyPages = prepareSurveyPages(metrics, answerByCode);
+  const score = calculateInspectionScore(props.answers);
+  const surveyPages = prepareSurveyPages(metrics, answerByCode, score);
   assertPreparedQuestionsComplete(surveyPages);
-  const blob = await pdf(<InspectionPdf {...props} metrics={metrics} surveyPages={surveyPages} />).toBlob();
+  const blob = await pdf(<InspectionPdf {...props} metrics={metrics} surveyPages={surveyPages} score={score} />).toBlob();
   try {
     await assertPdfQuestionsComplete(blob, surveyPages);
   } catch (error) {

@@ -741,6 +741,7 @@
 .documentHeader h1 { margin: 0; font-size: clamp(20px, 3.2vw, 28px); line-height: 1.35; }
 .documentHeader span { display: block; margin-top: 8px; color: #465a55; font-size: 12px; line-height: 1.6; }
 .reviewPaper > .ownerSummaryCard { margin: 0; padding: 0 0 24px; border: 0; border-radius: 0; box-shadow: none; }
+.reviewPaper > .scoringReviewSection { margin: 0; padding: 24px 0; border-top: 1px solid #99a6a3; }
 .reviewPaper > .surveyReviewSection { margin: 0; padding: 24px 0; border-top: 1px solid #99a6a3; }
 .reviewPaper > .certificationCard { margin: 0; padding: 24px 0 0; border: 0; border-top: 1px solid #99a6a3; border-radius: 0; box-shadow: none; }
 .ownerDetails { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 20px 0 6px; column-gap: 28px; row-gap: 12px; }
@@ -755,6 +756,7 @@
 .ownerDetails .responsibleSummary { display: grid; gap: 6px; white-space: normal; }
 .responsibleSummary span { display: block; font-weight: 650; line-height: 1.5; }
 .resultSummary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.scoringReviewSection .resultSummary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .resultSummary > div { padding: 14px 8px; border-radius: var(--radius-sm); background: var(--color-canvas); text-align: center; }
 .resultSummary strong,
 .resultSummary span { display: block; }
@@ -762,6 +764,22 @@
 .resultSummary span { margin-top: 2px; color: var(--color-muted); font-size: 12px; }
 .resultSummary .resultAttention { background: var(--color-warning-soft); }
 .resultSummary .resultAttention strong { color: var(--color-warning); }
+.resultSummary .resultSuccess { background: var(--color-success-soft); }
+.resultSummary .resultSuccess strong { color: var(--color-success); }
+.resultSummary .resultDanger { background: var(--color-danger-soft); }
+.resultSummary .resultDanger strong { color: var(--color-danger); }
+.categoryScoreGrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 10px; gap: 10px; }
+.categoryScoreGrid > div { min-width: 0; padding: 12px 8px; border: 1px solid var(--color-line); border-radius: var(--radius-sm); text-align: center; }
+.categoryScoreGrid span,
+.categoryScoreGrid strong,
+.categoryScoreGrid small { display: block; }
+.categoryScoreGrid span { color: var(--color-muted); font-size: 11px; font-weight: 700; }
+.categoryScoreGrid strong { margin-top: 2px; color: var(--color-primary-900); font-size: 20px; }
+.categoryScoreGrid small { margin-top: 2px; color: var(--color-muted); font-size: 10px; }
+.criticalFailure,
+.criticalIncomplete { margin: 12px 0 0; padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 750; }
+.criticalFailure { color: var(--color-danger); background: var(--color-danger-soft); }
+.criticalIncomplete { color: var(--color-warning); background: var(--color-warning-soft); }
 .resultDisclaimer { margin: 14px 0 0; color: var(--color-muted); font-size: 12px; }
 .surveyReviewSection { min-width: 0; max-width: 100%; margin-bottom: 18px; }
 .surveyReviewHeading { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 14px; gap: 16px; }
@@ -1137,6 +1155,7 @@
   .ownerDetails > .ownerDetailWide { grid-column: 1; }
   .ownerContactRow { grid-template-columns: 1fr !important; gap: 11px !important; }
   .resultSummary { grid-template-columns: repeat(2, 1fr); }
+  .categoryScoreGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ownerSummaryHeading,
   .reviewPaper { padding: 16px 12px; }
   .documentHeader { padding-right: 8px; padding-left: 8px; }
@@ -1248,10 +1267,20 @@
   .documentHeader h1 { font-size: 17px; }
   .documentHeader span { margin-top: 4px; color: #111; font-size: 9px; }
   .ownerSummaryCard,
+  .scoringReviewSection,
   .surveyCategory,
   .certificationCard { border-color: #777; border-radius: 0; box-shadow: none; }
   .ownerSummaryCard,
   .certificationCard { padding: 14px; }
+  .scoringReviewSection { break-inside: avoid; }
+  .categoryScoreGrid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+  .categoryScoreGrid > div { padding: 7px 4px; border-color: #777; border-radius: 0; }
+  .categoryScoreGrid strong { font-size: 14px; }
+  .categoryScoreGrid span,
+  .categoryScoreGrid small,
+  .resultDisclaimer,
+  .criticalFailure,
+  .criticalIncomplete { font-size: 8px; }
   .ownerDetails { margin: 12px 0 4px; column-gap: 18px; row-gap: 7px; }
   .ownerDetails > div { padding: 0; }
   .ownerDetails dt { padding-bottom: 3px; color: #111; font-size: 8px; }
