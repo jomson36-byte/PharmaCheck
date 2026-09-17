@@ -988,7 +988,7 @@ function SignaturePad({ value, label, onChange }: { value: string; label: string
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.fillStyle = "#fff";
     context.fillRect(0, 0, width, height);
-    context.strokeStyle = "#073f38";
+    context.strokeStyle = "#174a8b";
     context.lineWidth = 2.4;
     context.lineCap = "round";
     context.lineJoin = "round";
