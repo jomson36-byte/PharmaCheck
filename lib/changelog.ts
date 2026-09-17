@@ -5,13 +5,22 @@ export type AppRelease = {
   changes: string[];
 };
 
-export const APP_VERSION = "0.3.1";
+export const APP_VERSION = "0.3.2";
 
 export const APP_RELEASES: AppRelease[] = [
   {
-    version: "0.3.1",
+    version: "0.3.2",
     date: "17 กันยายน 2569",
     current: true,
+    changes: [
+      "เพิ่มคะแนนแยกหมวด 1 ถึง 5 ใน Google Sheets",
+      "แสดงคะแนนที่ได้ คะแนนเต็มหลังตัดฐาน N/A และร้อยละของแต่ละหมวด",
+      "ขยาย Header ของไฟล์ Google Sheets เดิมโดยอัตโนมัติโดยไม่เปลี่ยนตำแหน่งคอลัมน์เดิม",
+    ],
+  },
+  {
+    version: "0.3.1",
+    date: "17 กันยายน 2569",
     changes: [
       "เพิ่มคอลัมน์สรุปคะแนนและสถานะความครบถ้วนในการส่งข้อมูลไป Google Sheets",
       "เพิ่มสถานะ จำนวน และรหัสข้อ Critical Defect เพื่อใช้ทำรายงานและ Dashboard",
