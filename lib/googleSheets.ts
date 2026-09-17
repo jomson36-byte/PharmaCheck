@@ -1,6 +1,6 @@
 import { createId, db } from "./db";
 import type { Answer, InspectionSignatureRole, SubmissionPayload, SyncQueueItem } from "./models";
-import { questions } from "./questions";
+import { categories, questions } from "./questions";
 import { calculateInspectionScore, roundScore } from "./scoring";
 
 const SHEET_NAME = "Submissions";
@@ -111,6 +111,11 @@ export const sheetHeaders = [
   "critical_defect_status",
   "critical_defect_count",
   "critical_defect_codes",
+  ...categories.flatMap((category) => [
+    `category_${category.code}_earned`,
+    `category_${category.code}_full`,
+    `category_${category.code}_percent`,
+  ]),
 ];
 
 function canonicalPayload(payload: SubmissionPayload) {
@@ -428,6 +433,11 @@ function createSheetRow(item: SyncQueueItem) {
     score.criticalDefect.status,
     criticalDefectCodes.length,
     criticalDefectCodes.join(","),
+    ...score.categories.flatMap((category) => [
+      category.earnedScore,
+      category.fullScore,
+      category.percentage === null ? "" : roundScore(category.percentage),
+    ]),
   ];
 }
 
