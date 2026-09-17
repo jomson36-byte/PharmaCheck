@@ -1,6 +1,7 @@
 import { createId, db } from "./db";
 import type { Answer, InspectionSignatureRole, SubmissionPayload, SyncQueueItem } from "./models";
 import { questions } from "./questions";
+import { calculateInspectionScore, roundScore } from "./scoring";
 
 const SHEET_NAME = "Submissions";
 const GOOGLE_SCOPES = [
@@ -104,6 +105,12 @@ export const sheetHeaders = [
   "payload_json",
   ...SIGNATURE_ROLES.map((role) => `signature_${role}_json`),
   "deficiencies",
+  "scoring_rule_version",
+  "score_percent",
+  "score_status",
+  "critical_defect_status",
+  "critical_defect_count",
+  "critical_defect_codes",
 ];
 
 function canonicalPayload(payload: SubmissionPayload) {
@@ -376,6 +383,10 @@ export async function validateGoogleSpreadsheetCompatibility(spreadsheetId: stri
 function createSheetRow(item: SyncQueueItem) {
   const { inspection, answers, responsiblePersons } = item.payloadSnapshot;
   const answerMap = new Map(answers.map((answer) => [answer.questionCode, answer]));
+  const score = calculateInspectionScore(answers);
+  const criticalDefectCodes = score.criticalDefect.failedQuestionCodes.length
+    ? score.criticalDefect.failedQuestionCodes
+    : score.criticalDefect.incompleteQuestionCodes;
   const syncedAt = new Date().toISOString();
 
   return [
@@ -411,6 +422,12 @@ function createSheetRow(item: SyncQueueItem) {
       return signature ? JSON.stringify(signature) : "";
     }),
     inspection.deficiencies ?? "",
+    score.ruleVersion,
+    score.overallPercentage === null ? "" : roundScore(score.overallPercentage),
+    score.isComplete ? "COMPLETE" : "INCOMPLETE",
+    score.criticalDefect.status,
+    criticalDefectCodes.length,
+    criticalDefectCodes.join(","),
   ];
 }
 

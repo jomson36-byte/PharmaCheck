@@ -492,6 +492,19 @@ created_at
 updated_at
 synced_at
 payload_json
+signature_licensee_json
+signature_duty_officer_json
+signature_assessor_1_json
+signature_assessor_2_json
+signature_witness_1_json
+signature_witness_2_json
+deficiencies
+scoring_rule_version
+score_percent
+score_status
+critical_defect_status
+critical_defect_count
+critical_defect_codes
 ```
 
 ค่าคำตอบใช้:
@@ -504,6 +517,8 @@ NA
 ```
 
 `payload_json` เป็นข้อมูลสำรองฉบับเต็มของ Revision โดยใช้ `question_code` แทนการคัดลอกข้อความคำถามทั้งหมด เพื่อลดขนาดข้อมูล
+
+คอลัมน์สรุปคะแนนต่อท้าย Header เดิมเพื่อให้ Spreadsheet ที่มีอยู่ขยายโครงสร้างได้อัตโนมัติ โดย `score_percent` ใช้ค่าเฉลี่ยร้อยละของทั้ง 5 หมวด, `score_status` ระบุเฉพาะความครบถ้วนของการคำนวณ และ `critical_defect_status` ใช้ค่า `PASS`, `FAIL` หรือ `INCOMPLETE` ระบบยังไม่ตัดสินผลผ่านหรือไม่ผ่านโดยรวม เพราะยังไม่มีเกณฑ์คะแนนผ่านที่ได้รับอนุมัติ
 
 หากต้องการ Sheet สำหรับอ่านง่ายเพิ่มเติม ให้สร้างเป็น Derived View หรือ Phase ต่อไป ไม่ให้กระทบเส้นทางการสำรองหลัก
 
